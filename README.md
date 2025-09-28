@@ -1,2 +1,3 @@
-# otus_2025
-Учебный курс PostgreSQL. Advanced OTUS ст арт 2025.09
+# OTUS_2025
+Домашние задания курса OTUS "PostgreSQL. Advanced"
+Группа 2025-09
