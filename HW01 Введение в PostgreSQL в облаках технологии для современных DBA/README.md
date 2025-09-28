@@ -1,4 +1,4 @@
-# Создание Виртуальной машины в облаке
+# Создание проекта + Настройка SSH-доступа
 
 ### 1. Настройка акканута в Yandex Cloud.
 ### 2. Создание сети.
@@ -100,7 +100,8 @@ Sep 27 15:46:09 epdpo26kjq970dur09m6 systemd[1]: Finished postgresql.service - P
 ```sh
 sudo -u postgres psql -c "create database otus01"
 ```
-##### Подключение к БД PostgreSQL
+
+# Подключение к PostgreSQL
 Сессия 1
 ```sh
 sudo -u postgres psql -d otus01
@@ -121,4 +122,14 @@ on
 session2#\set AUTOCOMMIT off
 session2#\echo :AUTOCOMMIT
 off
+```
+
+# Работа с транзакциями
+##### Создаём таблицу с двумя строками
+```
+session1#
+create table shipments(id serial, product_name text, quantity int, destination text);
+insert into shipments(product_name, quantity, destination) values('bananas', 1000, 'Europe');
+insert into shipments(product_name, quantity, destination) values('coffee', 500, 'USA');
+commit;
 ```
