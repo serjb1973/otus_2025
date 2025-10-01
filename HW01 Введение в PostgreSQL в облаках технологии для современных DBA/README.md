@@ -96,9 +96,10 @@ yc-user@epdpo26kjq970dur09m6:~$ sudo systemctl status postgresql
 Sep 27 15:46:09 epdpo26kjq970dur09m6 systemd[1]: Starting postgresql.service - PostgreSQL RDBMS...
 Sep 27 15:46:09 epdpo26kjq970dur09m6 systemd[1]: Finished postgresql.service - PostgreSQL RDBMS.
 ```
-### 2. Создание БД для урока 1
+### 2. Создание БД для урока 1 и устанавка расширения https://postgrespro.ru/docs/postgresql/17/pageinspect
 ```sh
 sudo -u postgres psql -c "create database otus01"
+sudo -u postgres psql -d otus01 -c "create extension pageinspect"
 ```
 
 # Подключение к PostgreSQL
@@ -161,26 +162,16 @@ session1#select * from shipments;
 ```
 ##### session2 Проверим текущий уровень изоляции с помощью команды:
 ```
+session2#begin;
+BEGIN
 session2#show transaction isolation level;
  transaction_isolation
 -----------------------
  read committed
 (1 row)
 ```
-##### Проверяем видимость в данной сессии, транзакция 851 (851:853:851) является активной и изменения сделанные в ней не должны быть видны в этой сессии
+##### Проверяем видимость в данной сессии, транзакция 851 является активной и изменения сделанные в ней не должны быть видны в этой сессии
 ```
-session2#select pg_current_xact_id();
- pg_current_xact_id
---------------------
-                852
-(1 row)
-
-session2#select * from pg_current_snapshot();
- pg_current_snapshot
----------------------
- 851:853:851
-(1 row)
-
 session2#select * from shipments;
  id | product_name | quantity | destination
 ----+--------------+----------+-------------
@@ -193,14 +184,8 @@ session2#select * from shipments;
 session1#commit;
 COMMIT
 ```
-##### session2 Теперь в этой сессии xmin=853 тоесть все изменения ниже этой границы будут видны в этой сессии и строка с xmin=851 тоже видна
+##### session2 Теперь в этой сессии строка с xmin=851 тоже видна
 ```
-session2#select * from pg_current_snapshot();
- pg_current_snapshot
----------------------
- 853:853:
-(1 row)
-
 session2#select * from shipments;
  id | product_name | quantity | destination
 ----+--------------+----------+-------------
@@ -208,10 +193,12 @@ session2#select * from shipments;
   2 | coffee       |      500 | USA
   3 | sugar        |      300 | Asia
 (3 rows)
+session2#commit;
+COMMIT
 ```
 
+
 ### Эксперименты с уровнем изоляции Repeatable Read
-###### поведение функции pg_current_snapshot не описано для Repeatable Read, далее её не применяю
 ##### session2 Меняем уровень изоляции транзакций
 ```
 session2#begin;
@@ -264,5 +251,5 @@ session2#select * from shipments;
   4 | bananas      |     2000 | Africa
 (4 rows)
 ```
-
-```
+# Работа с транзакциями вывод:
+##### Выше показана что аномалия "неповторяемое чтение" возникает с уровнем изоляции транзакции Read committed и не позникает с уровнем изоляции Repeatable read.
