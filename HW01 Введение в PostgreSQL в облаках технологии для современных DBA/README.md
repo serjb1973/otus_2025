@@ -116,20 +116,153 @@ off
 ```sh
 sudo -u postgres psql -d otus01
 \set PROMPT1 session2#
-otus01=# \set PROMPT1 session2#
-session2#\echo :AUTOCOMMIT
-on
-session2#\set AUTOCOMMIT off
-session2#\echo :AUTOCOMMIT
-off
 ```
 
 # Работа с транзакциями
-##### Создаём таблицу с двумя строками
+##### session1 Создаём таблицу с двумя строками
 ```
-session1#
 create table shipments(id serial, product_name text, quantity int, destination text);
 insert into shipments(product_name, quantity, destination) values('bananas', 1000, 'Europe');
 insert into shipments(product_name, quantity, destination) values('coffee', 500, 'USA');
 commit;
+CREATE TABLE
+INSERT 0 1
+INSERT 0 1
+COMMIT
+```
+##### Делаем вставку доп строки в таблицу:
+```
+session1#insert into shipments(product_name, quantity, destination) values('sugar', 300, 'Asia');
+INSERT 0 1
+```
+##### Проверяем t_xmin, t_xmax новой строки - у неё транзакция 851 и эта транзакция активна:
+```
+session1#SELECT t_ctid,t_xmin,t_xmax FROM heap_page_items(get_raw_page('shipments', 0));
+ t_ctid | t_xmin | t_xmax
+--------+--------+--------
+ (0,1)  |    850 |      0
+ (0,2)  |    850 |      0
+ (0,3)  |    851 |      0
+(3 rows)
+
+session1#select pg_current_xact_id();
+ pg_current_xact_id
+--------------------
+                851
+(1 row)
+session1#select * from shipments;
+ id | product_name | quantity | destination
+----+--------------+----------+-------------
+  1 | bananas      |     1000 | Europe
+  2 | coffee       |      500 | USA
+  3 | sugar        |      300 | Asia
+(3 rows)
+--
+```
+##### session2 Проверим текущий уровень изоляции с помощью команды:
+```
+session2#show transaction isolation level;
+ transaction_isolation
+-----------------------
+ read committed
+(1 row)
+```
+##### Проверяем видимость в данной сессии, транзакция 851 (851:853:851) является активной и изменения сделанные в ней не должны быть видны в этой сессии
+```
+session2#select pg_current_xact_id();
+ pg_current_xact_id
+--------------------
+                852
+(1 row)
+
+session2#select * from pg_current_snapshot();
+ pg_current_snapshot
+---------------------
+ 851:853:851
+(1 row)
+
+session2#select * from shipments;
+ id | product_name | quantity | destination
+----+--------------+----------+-------------
+  1 | bananas      |     1000 | Europe
+  2 | coffee       |      500 | USA
+(2 rows)
+```
+##### session1 Завершаем транзакцию 
+```
+session1#commit;
+COMMIT
+```
+##### session2 Теперь в этой сессии xmin=853 тоесть все изменения ниже этой границы будут видны в этой сессии и строка с xmin=851 тоже видна
+```
+session2#select * from pg_current_snapshot();
+ pg_current_snapshot
+---------------------
+ 853:853:
+(1 row)
+
+session2#select * from shipments;
+ id | product_name | quantity | destination
+----+--------------+----------+-------------
+  1 | bananas      |     1000 | Europe
+  2 | coffee       |      500 | USA
+  3 | sugar        |      300 | Asia
+(3 rows)
+```
+
+### Эксперименты с уровнем изоляции Repeatable Read
+###### поведение функции pg_current_snapshot не описано для Repeatable Read, далее её не применяю
+##### session2 Меняем уровень изоляции транзакций
+```
+session2#begin;
+BEGIN
+session2#set transaction isolation level repeatable read;
+SET
+session2#select * from shipments;
+ id | product_name | quantity | destination
+----+--------------+----------+-------------
+  1 | bananas      |     1000 | Europe
+  2 | coffee       |      500 | USA
+  3 | sugar        |      300 | Asia
+(3 rows)
+```
+##### session1 Вставляем строку и коммитим транзакцию
+```
+session1#insert into shipments(product_name, quantity, destination) values('bananas', 2000, 'Africa');
+INSERT 0 1
+session1#commit;
+COMMIT
+session1#select * from shipments;
+ id | product_name | quantity | destination
+----+--------------+----------+-------------
+  1 | bananas      |     1000 | Europe
+  2 | coffee       |      500 | USA
+  3 | sugar        |      300 | Asia
+  4 | bananas      |     2000 | Africa
+(4 rows)
+```
+##### session2# Запрос в сессии 2 в рамках начатой транзакции показывает только строки актуальные на момент старта этой транзакции.
+```
+session2#select * from shipments;
+ id | product_name | quantity | destination
+----+--------------+----------+-------------
+  1 | bananas      |     1000 | Europe
+  2 | coffee       |      500 | USA
+  3 | sugar        |      300 | Asia
+(3 rows)
+```
+##### После заверщения транзакции в режиме transaction isolation level repeatable read данные в таблице видны
+```
+session2#commit;
+COMMIT
+session2#select * from shipments;
+ id | product_name | quantity | destination
+----+--------------+----------+-------------
+  1 | bananas      |     1000 | Europe
+  2 | coffee       |      500 | USA
+  3 | sugar        |      300 | Asia
+  4 | bananas      |     2000 | Africa
+(4 rows)
+```
+
 ```
