@@ -16,7 +16,7 @@ $ ssh-keygen.exe -lf ~/.ssh/id_rsa.pub
 ##### Выбираем образ ОС
 ```sh
 yc compute image list --folder-id standard-images --limit 0 --jq '.[].family' | sort | uniq
-...sh
+...
 ubuntu-2404-lts-oslogin
 ...
 ```
