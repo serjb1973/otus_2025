@@ -1,36 +1,25 @@
-# Создание проекта + Настройка SSH-доступа
+# PostgreSQL и Docker: создание образов, настройка и мониторинг
 
-### 1. Настройка акканута в Yandex Cloud.
-### 2. Создание сети.
-### 3. Установка на клиентском компьютере интерфейса командной строки Yandex Cloud (CLI).
-### 4. Инициализация и настройка Yandex CLI.
-### 5. Создание пары SSH ключей доступа на клиенте.
+### 1. Создание виртуального хоста с Ubuntu 20.04 в Яндекс cloud или аналогах.
+### 2. Установка Docker Engine.
+### 3. Создание каталог /var/lib/postgres для хранения данных.
+### 4. Создание docker контейнера с PostgreSQL 14, смонтированного в него /var/lib/postgres.
+### 5. Создание docker контейнера с клиентом PostgreSQL.
+### 6. Подключение из контейнера с клиентом к контейнеру с сервером и создание таблицу с данными о перевозках.
+### 7. Подключение к контейнеру с сервером с ноутбука или компьютера.
+### 8. Удаление контейнера с сервером и создание его заново.
+### 9. Проверка, что данные остались на месте.
 
-Аккаунт в Yandex Cloud у меня создан несколько лет назад, поэтому пункты 1-5 пропускаю, ключ также был создан несколько лет назад:
-```sh
-$ ssh-keygen.exe -lf ~/.ssh/id_rsa.pub
-3072 SHA256:wG/dYH...ZgA BiryukovSB@MCD000209 (RSA)
-```
 
-### 6. Создание виртуальной машины в интерфейсе Yandex CLI
+### 1. Создание виртуального хоста с Ubuntu 20.04 в Яндекс cloud или аналогах.
 ##### Выбираем образ ОС
 ```sh
-yc compute image list --folder-id standard-images --limit 0 --jq '.[].family' | sort | uniq
+yc compute image list --folder-id standard-images --limit 0 --jq '.[].family' | grep ubuntu |sort |uniq
 ...
-ubuntu-2404-lts-oslogin
+ubuntu-2004-lts
 ...
 ```
-##### Выбираем свободный IP адрес
-```sh
-yc vpc subnet list
-yc vpc address list
-yc vpc address get e2lpia39hmo6aeq1hm83
-```
-##### Выбираем тип диска 
-```sh
-yc compute disk-type list
-network-hdd
-```
+
 ##### Создаём виртуальный хост, характеристики:
 - vCPU=2
 - Гарантированная доля vCPU 20%
@@ -38,7 +27,7 @@ network-hdd
 - Тип прерываемая
 ```sh
 yc compute instance create \
-  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-2404-lts-oslogin,auto-delete,type=network-hdd,size=20GB \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-2004-lts,auto-delete,type=network-hdd,size=20GB \
   --name bananaflow-19730802 \
   --public-address 51.250.31.197 \
   --ssh-key ~/.ssh/id_rsa.pub \
@@ -57,6 +46,62 @@ yc compute instance delete --name bananaflow-19730802
 ssh -i ~/.ssh/id_rsa yc-user@51.250.31.197
 sudo apt update ; sudo apt upgrade -y
 ```
+### 2. Установка Docker Engine.
+##### поставим докер  https://docs.docker.com/engine/install/ubuntu/
+```sh
+curl -fsSL https://get.docker.com -o get-docker.sh && sudo sh get-docker.sh --version 20.10 && rm get-docker.sh
+проверка службы
+sudo systemctl status docker
+● docker.service - Docker Application Container Engine
+     Loaded: loaded (/lib/systemd/system/docker.service; enabled; vendor preset: enabled)
+     Active: active (running) since Sun 2025-10-05 10:09:48 UTC; 41s ago
+
+```
+### 3. Создание каталог /var/lib/postgres для хранения данных.
+```sh
+sudo mkdir /var/lib/postgres
+```
+### 4. Создание docker контейнера с PostgreSQL 14, смонтированного в него /var/lib/postgres.
+##### Создаем docker-сеть: 
+```sh
+sudo docker network create db-net
+```
+##### Качаем заранее образ postgres
+```sh
+sudo docker pull postgres:14
+sudo docker image inspect postgres:14
+```
+##### Создание контейнера с БД
+```sh
+sudo docker run -d --network db-net --name postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 -v /var/lib/postgres:/var/lib/postgresql/data postgres:14
+```
+##### Проверка чт о каталог нормально примонтирован и файлы
+```sh
+sudo grep -Ev '^$|^#' /var/lib/postgres/pg_hba.conf
+local   all             all                                     trust
+host    all             all             127.0.0.1/32            trust
+host    all             all             ::1/128                 trust
+local   replication     all                                     trust
+host    replication     all             127.0.0.1/32            trust
+host    replication     all             ::1/128                 trust
+host all all all scram-sha-256
+```
+
+### 5. Создание docker контейнера с клиентом PostgreSQL.
+### 6. Подключение из контейнера с клиентом к контейнеру с сервером и создание таблицу с данными о перевозках.
+### 7. Подключение к контейнеру с сервером с ноутбука или компьютера.
+### 8. Удаление контейнера с сервером и создание его заново.
+### 9. Проверка, что данные остались на месте.
+
+
+
+
+
+
+
+
+
+
 
 # Установка Postgresql
 ### 1. Установка Программного обеспечения Postgresql
