@@ -65,7 +65,7 @@ sudo docker image inspect postgres:14
 ```sh
 sudo docker run -d --network db-net --name postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 -v /var/lib/postgres:/var/lib/postgresql/data postgres:14
 ```
-##### Проверка что каталог нормально примонтирован и файлы
+##### Проверка что каталог нормально примонтирован и файлы кластера созданы
 ```sh
 sudo grep -Ev '^$|^#' /var/lib/postgres/pg_hba.conf
 local   all             all                                     trust
