@@ -1,35 +1,24 @@
-# Создание проекта + Настройка SSH-доступа
+# Настройка PostgreSQL
 
-### 1. Настройка акканута в Yandex Cloud.
-### 2. Создание сети.
-### 3. Установка на клиентском компьютере интерфейса командной строки Yandex Cloud (CLI).
-### 4. Инициализация и настройка Yandex CLI.
-### 5. Создание пары SSH ключей доступа на клиенте.
+Цель:
+- научиться подключать и настраивать дополнительный диск для хранения данных;
+- освоить перенос базы данных postgresql на новое хранилище;
+- обеспечить отказоустойчивость данных при помощи внешнего диска;
 
-Аккаунт в Yandex Cloud у меня создан несколько лет назад, поэтому пункты 1-5 пропускаю, ключ также был создан несколько лет назад:
-```sh
-$ ssh-keygen.exe -lf ~/.ssh/id_rsa.pub
-3072 SHA256:wG/dYH...ZgA BiryukovSB@MCD000209 (RSA)
-```
 
-### 6. Создание виртуальной машины в интерфейсе Yandex CLI
+### 1. Создание виртуальной машины с Ubuntu 22.04 и установка PostgreSQL 16.
+### 2. Добавление внешнего диска к виртуальной машине.
+### 3. Перенос БД на новый диск через создание физической реплики и переключения на неё.
+### 4. Проверка что данные сохранились и находятся на новом диске.
+
+
+### 1. Создание виртуальной машины с Ubuntu 22.04 и установка PostgreSQL 16.
 ##### Выбираем образ ОС
 ```sh
-yc compute image list --folder-id standard-images --limit 0 --jq '.[].family' | sort | uniq
+yc compute image list --folder-id standard-images --limit 0 --jq '.[].family' | grep ubuntu |sort |uniq
 ...
-ubuntu-2404-lts-oslogin
+ubuntu-2204-lts
 ...
-```
-##### Выбираем свободный IP адрес
-```sh
-yc vpc subnet list
-yc vpc address list
-yc vpc address get e2lpia39hmo6aeq1hm83
-```
-##### Выбираем тип диска 
-```sh
-yc compute disk-type list
-network-hdd
 ```
 ##### Создаём виртуальный хост, характеристики:
 - vCPU=2
@@ -38,7 +27,7 @@ network-hdd
 - Тип прерываемая
 ```sh
 yc compute instance create \
-  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-2404-lts-oslogin,auto-delete,type=network-hdd,size=20GB \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-2204-lts,auto-delete,type=network-hdd,size=20GB \
   --name bananaflow-19730802 \
   --public-address 51.250.31.197 \
   --ssh-key ~/.ssh/id_rsa.pub \
@@ -55,7 +44,7 @@ yc compute instance delete --name bananaflow-19730802
 ##### Подключение с локального хоста к хосту в облаке по ssh
 ```sh
 ssh -i ~/.ssh/id_rsa yc-user@51.250.31.197
-sudo apt update ; sudo apt upgrade -y
+sudo apt update && sudo apt upgrade -y && sudo apt install -y vim
 ```
 
 # Установка Postgresql
@@ -63,193 +52,205 @@ sudo apt update ; sudo apt upgrade -y
 [Сайт источник ванильного postgresql](https://www.postgresql.org/download/linux/ubuntu/)
 ```sh
 ssh -i ~/.ssh/id_rsa yc-user@51.250.31.197
-sudo apt install -y postgresql-common ; sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh ; sudo apt-get update ; sudo apt -y install postgresql
-```
-##### Проверка
-```sh
-yc-user@epdpo26kjq970dur09m6:~$ apt list --installed postgres*
-Listing... Done
-postgresql-18-jit/noble-pgdg,now 18.0-1.pgdg24.04+3 amd64 [installed,automatic]
-postgresql-18/noble-pgdg,now 18.0-1.pgdg24.04+3 amd64 [installed,automatic]
-postgresql-client-18/noble-pgdg,now 18.0-1.pgdg24.04+3 amd64 [installed,automatic]
-postgresql-client-common/noble-pgdg,now 283.pgdg24.04+1 all [installed,automatic]
-postgresql-common/noble-pgdg,now 283.pgdg24.04+1 all [installed]
-postgresql/noble-pgdg,now 18+283.pgdg24.04+1 all [installed]
+sudo apt install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && sudo apt-get update && sudo apt -y install postgresql-16
 ```
 ##### Проверка кластера Postgresql
 ```sh
-yc-user@epdpo26kjq970dur09m6:~$ pg_lsclusters
+yc-user@epd994h503crm15q5jpg:~$ pg_lsclusters
 Ver Cluster Port Status Owner    Data directory              Log file
-18  main    5432 online postgres /var/lib/postgresql/18/main /var/log/postgresql/postgresql-18-main.log
+16  main    5432 online postgres /var/lib/postgresql/16/main /var/log/postgresql/postgresql-16-main.log
 ```
 ##### Проверка сервиса Postgresql
 ```sh
-yc-user@epdpo26kjq970dur09m6:~$ service --status-all |grep postgres
- [ + ]  postgresql
-yc-user@epdpo26kjq970dur09m6:~$ sudo systemctl status postgresql
+yc-user@epd994h503crm15q5jpg:~$ sudo systemctl status postgresql
 ● postgresql.service - PostgreSQL RDBMS
-     Loaded: loaded (/usr/lib/systemd/system/postgresql.service; enabled; preset: enabled)
-     Active: active (exited) since Sat 2025-09-27 15:46:09 UTC; 6min ago
-   Main PID: 8191 (code=exited, status=0/SUCCESS)
-        CPU: 2ms
+     Loaded: loaded (/lib/systemd/system/postgresql.service; enabled; vendor preset: enabled)
+     Active: active (exited) since Wed 2025-10-08 10:45:25 UTC; 5min ago
+   Main PID: 3031 (code=exited, status=0/SUCCESS)
+        CPU: 1ms
 
-Sep 27 15:46:09 epdpo26kjq970dur09m6 systemd[1]: Starting postgresql.service - PostgreSQL RDBMS...
-Sep 27 15:46:09 epdpo26kjq970dur09m6 systemd[1]: Finished postgresql.service - PostgreSQL RDBMS.
+Oct 08 10:45:25 epd994h503crm15q5jpg systemd[1]: Starting PostgreSQL RDBMS...
+Oct 08 10:45:25 epd994h503crm15q5jpg systemd[1]: Finished PostgreSQL RDBMS.
 ```
-### 2. Создание БД для урока 1 и устанавка расширения https://postgrespro.ru/docs/postgresql/17/pageinspect
+##### Создание БД для урока
 ```sh
-sudo -u postgres psql -c "create database otus01"
-sudo -u postgres psql -d otus01 -c "create extension pageinspect"
+sudo -u postgres psql -c "create database otus"
+CREATE DATABASE
 ```
-
-# Подключение к PostgreSQL
-Сессия 1
+### Создание таблицы с данными о перевозках
 ```sh
-sudo -u postgres psql -d otus01
-\set PROMPT1 session1#
-session1#\echo :AUTOCOMMIT
-on
-session1#\set AUTOCOMMIT off
-session1#\echo :AUTOCOMMIT
-off
-```
-Сессия 2
-```sh
-sudo -u postgres psql -d otus01
-\set PROMPT1 session2#
-```
-
-# Работа с транзакциями
-##### session1 Создаём таблицу с двумя строками
-```
-create table shipments(id serial, product_name text, quantity int, destination text);
-insert into shipments(product_name, quantity, destination) values('bananas', 1000, 'Europe');
-insert into shipments(product_name, quantity, destination) values('coffee', 500, 'USA');
-commit;
+sudo -u postgres psql -d otus
+otus=# create table shipments(id serial, product_name text, quantity int, destination text);
 CREATE TABLE
+otus=# insert into shipments(product_name, quantity, destination) values('bananas', 1000, 'Europe');
+insert into shipments(product_name, quantity, destination) values('bananas', 1500, 'Asia');
+insert into shipments(product_name, quantity, destination) values('bananas', 2000, 'Africa');
+insert into shipments(product_name, quantity, destination) values('coffee', 500, 'USA');
+insert into shipments(product_name, quantity, destination) values('coffee', 700, 'Canada');
+insert into shipments(product_name, quantity, destination) values('coffee', 300, 'Japan');
+insert into shipments(product_name, quantity, destination) values('sugar', 1000, 'Europe');
+insert into shipments(product_name, quantity, destination) values('sugar', 800, 'Asia');
+insert into shipments(product_name, quantity, destination) values('sugar', 600, 'Africa');
+insert into shipments(product_name, quantity, destination) values('sugar', 400, 'USA');
 INSERT 0 1
 INSERT 0 1
-COMMIT
-```
-##### Делаем вставку доп строки в таблицу:
-```
-session1#insert into shipments(product_name, quantity, destination) values('sugar', 300, 'Asia');
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
 INSERT 0 1
 ```
-##### Проверяем t_xmin, t_xmax новой строки - у неё транзакция 851 и эта транзакция активна:
+### 2. Добавление внешнего диска к виртуальной машине.
+##### Добавляем дополнительно внешний диск в виртуальный хост.
+##### Создание диска https://yandex.cloud/ru/docs/compute/operations/disk-create/empty
+```sh
+yc compute disk create --name second-disk --size 50 --description "second disk for database"
 ```
-session1#SELECT t_ctid,t_xmin,t_xmax FROM heap_page_items(get_raw_page('shipments', 0));
- t_ctid | t_xmin | t_xmax
---------+--------+--------
- (0,1)  |    850 |      0
- (0,2)  |    850 |      0
- (0,3)  |    851 |      0
-(3 rows)
-
-session1#select pg_current_xact_id();
- pg_current_xact_id
---------------------
-                851
-(1 row)
-session1#select * from shipments;
- id | product_name | quantity | destination
-----+--------------+----------+-------------
-  1 | bananas      |     1000 | Europe
-  2 | coffee       |      500 | USA
-  3 | sugar        |      300 | Asia
-(3 rows)
---
+##### Проверка:
+```sh
+yc compute disk list
 ```
-##### session2 Проверим текущий уровень изоляции с помощью команды:
+##### Подключение диска в виртуалке https://yandex.cloud/ru/docs/compute/operations/vm-control/vm-attach-disk
+```sh
+yc compute instance attach-disk bananaflow-19730802 --disk-name second-disk --mode rw
 ```
-session2#begin;
-BEGIN
-session2#show transaction isolation level;
- transaction_isolation
------------------------
- read committed
-(1 row)
+##### Проверка:
+```sh
+yc compute instance get --full bananaflow-19730802
 ```
-##### Проверяем видимость в данной сессии, транзакция 851 является активной и изменения сделанные в ней не должны быть видны в этой сессии
+##### Настройка диска в операционке виртуального хоста
+```sh
+ssh -i ~/.ssh/id_rsa yc-user@51.250.31.197
 ```
-session2#select * from shipments;
- id | product_name | quantity | destination
-----+--------------+----------+-------------
-  1 | bananas      |     1000 | Europe
-  2 | coffee       |      500 | USA
-(2 rows)
+##### Ищем файл устройства /dev/vdb
+```sh
+ls -la /dev/disk/by-id
 ```
-##### session1 Завершаем транзакцию 
+##### Создаём раздел /dev/vdb1 на диске
+```sh
+sudo fdisk /dev/vdb
 ```
-session1#commit;
-COMMIT
+##### Создаём файловую систему на новом разделе /dev/vdb1
+```sh
+sudo mkfs.ext4 /dev/vdb1
+...
+Filesystem UUID: 2723f12d-a746-49d1-a389-fe3e7435d22a
+...
+sudo mkdir /var/lib/postgresql/tmp
+sudo mount /dev/vdb1 /var/lib/postgresql/tmp
+sudo chown postgres:postgres /var/lib/postgresql/tmp
 ```
-##### session2 Теперь в этой сессии строка с xmin=851 тоже видна
-```
-session2#select * from shipments;
- id | product_name | quantity | destination
-----+--------------+----------+-------------
-  1 | bananas      |     1000 | Europe
-  2 | coffee       |      500 | USA
-  3 | sugar        |      300 | Asia
-(3 rows)
-session2#commit;
-COMMIT
+##### Добавляем строку в fstab
+```sh
+sudo vim /etc/fstab
+UUID=2723f12d-a746-49d1-a389-fe3e7435d22a /var/lib/postgresql/16 ext4 defaults 0 2
 ```
 
+### 3. Перенос БД на новый диск через создание физической реплики и переключения на неё.
+##### Делаем slave database
+```sh
+sudo su - postgres
+mkdir /var/lib/postgresql/tmp/main
+cd /var/lib/postgresql/tmp/main
+pg_basebackup -P -v -D /var/lib/postgresql/tmp/main -Fp -R
+ls -l /var/lib/postgresql/tmp/main
+echo "port=5433" >> /var/lib/postgresql/tmp/main/postgresql.conf
+cp /etc/postgresql/16/main/pg_hba.conf /var/lib/postgresql/tmp/main/
+/usr/lib/postgresql/16/bin/pg_ctl start -D /var/lib/postgresql/tmp/main
+```
+##### Проверяем работу репликации
+##### master
+```sh
+psql -p 5432 -d otus
+select * from pg_stat_replication;
+insert into shipments(product_name, quantity, destination) values('lemon', 333, 'Russia');
+```
+##### slave
+```sh
+psql -p 5433 -d otus
+select * from pg_stat_wal_receiver;
+select * from shipments where product_name='lemon';
+```
+##### Делаем переключение на новую БД 
+```sh
+/usr/lib/postgresql/16/bin/pg_ctl stop -D /var/lib/postgresql/16/main
+/usr/lib/postgresql/16/bin/pg_ctl promote -D /var/lib/postgresql/tmp/main
+psql -p 5433 -d otus
+alter system reset primary_conninfo ;
+/usr/lib/postgresql/16/bin/pg_ctl stop -D /var/lib/postgresql/tmp/main
+```
+##### Готовим каталоги файловой системы к смене местами:
+```sh
+mv /var/lib/postgresql/16 /var/lib/postgresql/16_old
+mkdir /var/lib/postgresql/16
+rm /var/lib/postgresql/tmp/main/postgresql.conf
+rm /var/lib/postgresql/tmp/main/pg_hba.conf
+du -ms /var/lib/postgresql/
+```
+##### Перегружаем виртуалку
 
-### Эксперименты с уровнем изоляции Repeatable Read
-##### session2 Меняем уровень изоляции транзакций
+### 4. Проверка что данные сохранились и находятся на новом диске.
+##### проверка что раздел замонтирован
+```sh
+yc-user@epd994h503crm15q5jpg:~$ df -h
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs           197M  764K  196M   1% /run
+/dev/vda1        19G  2.0G   17G  11% /
+tmpfs           982M  1.1M  981M   1% /dev/shm
+tmpfs           5.0M     0  5.0M   0% /run/lock
+/dev/vdb1        49G   79M   47G   1% /var/lib/postgresql/16
+/dev/vda15      599M  6.1M  593M   2% /boot/efi
+tmpfs           197M     0  197M   0% /run/user/1000
 ```
-session2#begin;
-BEGIN
-session2#set transaction isolation level repeatable read;
-SET
-session2#select * from shipments;
+##### Проверка в БД
+```sh
+sudo -u postgres psql -d otus
+otus=# select * from shipments;
  id | product_name | quantity | destination
 ----+--------------+----------+-------------
   1 | bananas      |     1000 | Europe
-  2 | coffee       |      500 | USA
-  3 | sugar        |      300 | Asia
-(3 rows)
+  2 | bananas      |     1500 | Asia
+  3 | bananas      |     2000 | Africa
+  4 | coffee       |      500 | USA
+  5 | coffee       |      700 | Canada
+  6 | coffee       |      300 | Japan
+  7 | sugar        |     1000 | Europe
+  8 | sugar        |      800 | Asia
+  9 | sugar        |      600 | Africa
+ 10 | sugar        |      400 | USA
+ 11 | lemon        |      333 | Russia
+(11 rows)
+otus=# select * from pg_file_settings ;
+               sourcefile                | sourceline | seqno |            name            |                setting                 | applied | error
+-----------------------------------------+------------+-------+----------------------------+----------------------------------------+---------+-------
+ /etc/postgresql/16/main/postgresql.conf |         42 |     1 | data_directory             | /var/lib/postgresql/16/main            | t       |
+ /etc/postgresql/16/main/postgresql.conf |         44 |     2 | hba_file                   | /etc/postgresql/16/main/pg_hba.conf    | t       |
+ /etc/postgresql/16/main/postgresql.conf |         46 |     3 | ident_file                 | /etc/postgresql/16/main/pg_ident.conf  | t       |
+ /etc/postgresql/16/main/postgresql.conf |         50 |     4 | external_pid_file          | /var/run/postgresql/16-main.pid        | t       |
+ /etc/postgresql/16/main/postgresql.conf |         64 |     5 | port                       | 5432                                   | t       |
+ /etc/postgresql/16/main/postgresql.conf |         65 |     6 | max_connections            | 100                                    | t       |
+ /etc/postgresql/16/main/postgresql.conf |         68 |     7 | unix_socket_directories    | /var/run/postgresql                    | t       |
+ /etc/postgresql/16/main/postgresql.conf |        108 |     8 | ssl                        | on                                     | t       |
+ /etc/postgresql/16/main/postgresql.conf |        110 |     9 | ssl_cert_file              | /etc/ssl/certs/ssl-cert-snakeoil.pem   | t       |
+ /etc/postgresql/16/main/postgresql.conf |        113 |    10 | ssl_key_file               | /etc/ssl/private/ssl-cert-snakeoil.key | t       |
+ /etc/postgresql/16/main/postgresql.conf |        130 |    11 | shared_buffers             | 128MB                                  | t       |
+ /etc/postgresql/16/main/postgresql.conf |        153 |    12 | dynamic_shared_memory_type | posix                                  | t       |
+ /etc/postgresql/16/main/postgresql.conf |        247 |    13 | max_wal_size               | 1GB                                    | t       |
+ /etc/postgresql/16/main/postgresql.conf |        248 |    14 | min_wal_size               | 80MB                                   | t       |
+ /etc/postgresql/16/main/postgresql.conf |        565 |    15 | log_line_prefix            | %m [%p] %q%u@%d                        | t       |
+ /etc/postgresql/16/main/postgresql.conf |        603 |    16 | log_timezone               | Etc/UTC                                | t       |
+ /etc/postgresql/16/main/postgresql.conf |        607 |    17 | cluster_name               | 16/main                                | t       |
+ /etc/postgresql/16/main/postgresql.conf |        715 |    18 | datestyle                  | iso, mdy                               | t       |
+ /etc/postgresql/16/main/postgresql.conf |        717 |    19 | timezone                   | Etc/UTC                                | t       |
+ /etc/postgresql/16/main/postgresql.conf |        731 |    20 | lc_messages                | C.UTF-8                                | t       |
+ /etc/postgresql/16/main/postgresql.conf |        733 |    21 | lc_monetary                | C.UTF-8                                | t       |
+ /etc/postgresql/16/main/postgresql.conf |        734 |    22 | lc_numeric                 | C.UTF-8                                | t       |
+ /etc/postgresql/16/main/postgresql.conf |        735 |    23 | lc_time                    | C.UTF-8                                | t       |
+ /etc/postgresql/16/main/postgresql.conf |        741 |    24 | default_text_search_config | pg_catalog.english                     | t       |
+(24 rows)
 ```
-##### session1 Вставляем строку и коммитим транзакцию
-```
-session1#insert into shipments(product_name, quantity, destination) values('bananas', 2000, 'Africa');
-INSERT 0 1
-session1#commit;
-COMMIT
-session1#select * from shipments;
- id | product_name | quantity | destination
-----+--------------+----------+-------------
-  1 | bananas      |     1000 | Europe
-  2 | coffee       |      500 | USA
-  3 | sugar        |      300 | Asia
-  4 | bananas      |     2000 | Africa
-(4 rows)
-```
-##### session2# Запрос в сессии 2 в рамках начатой транзакции показывает только строки актуальные на момент старта этой транзакции.
-```
-session2#select * from shipments;
- id | product_name | quantity | destination
-----+--------------+----------+-------------
-  1 | bananas      |     1000 | Europe
-  2 | coffee       |      500 | USA
-  3 | sugar        |      300 | Asia
-(3 rows)
-```
-##### После заверщения транзакции в режиме transaction isolation level repeatable read данные в таблице видны
-```
-session2#commit;
-COMMIT
-session2#select * from shipments;
- id | product_name | quantity | destination
-----+--------------+----------+-------------
-  1 | bananas      |     1000 | Europe
-  2 | coffee       |      500 | USA
-  3 | sugar        |      300 | Asia
-  4 | bananas      |     2000 | Africa
-(4 rows)
-```
-# Работа с транзакциями вывод:
-##### Выше показана что аномалия "неповторяемое чтение" возникает с уровнем изоляции транзакции Read committed и не позникает с уровнем изоляции Repeatable read.
+
+otus=#
