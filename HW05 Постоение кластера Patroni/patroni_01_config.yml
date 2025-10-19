@@ -1,0 +1,68 @@
+scope: 16/main
+name: pg01
+
+restapi:
+  connect_address: 10.129.0.21:8008
+  listen: 10.129.0.21:8008
+
+etcd3:
+    hosts:
+    - 10.129.0.21:2379
+    - 10.129.0.22:2379
+    - 10.129.0.23:2379    
+
+bootstrap:
+  dcs:
+    loop_wait: 10
+    retry_timeout: 10
+    ttl: 30
+    postgresql:
+      parameters:
+        hot_standby: 'on'
+        max_connections: '100'
+        max_replication_slots: '10'
+        max_wal_senders: '10'
+        max_wal_size: 1GB
+        max_worker_processes: '8'
+        min_wal_size: 80MB
+        shared_buffers: 128MB
+        ssl: 'on'
+        ssl_cert_file: /etc/ssl/certs/ssl-cert-snakeoil.pem
+        ssl_key_file: /etc/ssl/private/ssl-cert-snakeoil.key
+        wal_level: replica
+        wal_log_hints: 'off'
+        logging_collector: 'on'
+      use_slots: true
+      use_pg_rewind: true
+
+  initdb:
+  - encoding: UTF8
+
+  pg_hba:
+  - host all all 0.0.0.0/0 scram-sha-256
+  - host replication all 0.0.0.0/0 scram-sha-256  
+  
+postgresql:
+  authentication:
+    replication:
+      password: pat
+      username: patroni
+    rewind:
+      password: pat
+      username: patroni
+    superuser:
+      password: pat
+      username: patroni
+  bin_dir: /usr/lib/postgresql/16/bin
+  connect_address: 10.129.0.21:5432
+  data_dir: /var/lib/postgresql/16/main
+  listen: '*:5432'
+  parameters:
+    hba_file: /etc/postgresql/16/main/pg_hba.conf
+    ident_file: /etc/postgresql/16/main/pg_ident.conf
+
+tags:
+    nofailover: false
+    noloadbalance: false
+    clonefrom: false
+    nosync: false
