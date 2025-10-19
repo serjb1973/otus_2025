@@ -1,250 +1,207 @@
-# Настройка PostgreSQL
+# Постоение кластера Patroni
 
 Цель:
-- научиться подключать и настраивать дополнительный диск для хранения данных;
-- освоить перенос базы данных postgresql на новое хранилище;
-- обеспечить отказоустойчивость данных при помощи внешнего диска;
+- развернуть отказоустойчивый кластер PostgreSQL с Patroni
 
-
-### 1. Создание виртуальной машины с Ubuntu 22.04 и установка PostgreSQL 16.
-##### Выбираем образ ОС
+### 1. Cоздание стенда из 7 хостов = 3 etcd + 3 postgres + 1 main
+##### 1.1 Создание хостов одним скриптом
 ```sh
-yc compute image list --folder-id standard-images --limit 0 --jq '.[].family' | grep ubuntu |sort |uniq
-...
-ubuntu-2204-lts
-...
+./hosts_create.sh 3 3
 ```
-##### Создаём виртуальный хост, характеристики:
-- vCPU=2
-- Гарантированная доля vCPU 20%
-- RAM 2GB
-- Тип прерываемая
-```sh
-yc compute instance create \
-  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-2204-lts,auto-delete,type=network-hdd,size=20GB \
-  --name bananaflow-19730802 \
-  --public-address 51.250.31.197 \
-  --ssh-key ~/.ssh/id_rsa.pub \
-  --memory 2GB --cores 2 --core-fraction 20 --preemptible
-```
-##### Просмотр списка виртаульных машин
+Просмотр списка виртаульных машин
 ```sh
 yc compute instance list
-Управление виртуальной машиной
-yc compute instance stop --name bananaflow-19730802
-yc compute instance start --name bananaflow-19730802
-yc compute instance delete --name bananaflow-19730802
 ```
-##### Подключение с локального хоста к хосту в облаке по ssh
+Управление виртуальными машинами
+```sh
+./hosts.sh stop
+./hosts.sh start
+./hosts.sh delete
+```
+Управление отдельной машиной
+```sh
+yc compute instance stop --name bananaflow-19730802-main
+yc compute instance start --name bananaflow-19730802-main
+yc compute instance delete --name bananaflow-19730802-main
+```
+##### 1.2 Перенос ключа на ност main, дял удобства работы со стендом
+```sh
+scp -i ~/.ssh/id_rsa -R ~/.ssh/id_rsa yc-user@51.250.31.197:~/.ssh/  
+ssh -i ~/.ssh/id_rsa yc-user@51.250.31.197
+chmod 400 ~/.ssh/id_rsa
+```
+##### 1.3 Подключение на хост main и установка необходимых пакетов
 ```sh
 ssh -i ~/.ssh/id_rsa yc-user@51.250.31.197
-sudo apt update && sudo apt upgrade -y && sudo apt install -y vim
+sudo apt update && sudo apt upgrade -y && sudo apt install -y vim && sudo apt install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && sudo apt-get update && sudo apt -y install postgresql-16 && sudo apt -y install haproxy
 ```
 
-# Установка Postgresql
-### 1. Установка Программного обеспечения Postgresql
-[Сайт источник ванильного postgresql](https://www.postgresql.org/download/linux/ubuntu/)
+### 2. Установка Etcd на три хоста
+##### 2.1 Подключение с хоста main
 ```sh
-ssh -i ~/.ssh/id_rsa yc-user@51.250.31.197
-sudo apt install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && sudo apt-get update && sudo apt -y install postgresql-16
+ssh -i ~/.ssh/id_rsa yc-user@etcd01
+ssh -i ~/.ssh/id_rsa yc-user@etcd02
+ssh -i ~/.ssh/id_rsa yc-user@etcd03
 ```
-##### Проверка кластера Postgresql
+##### 2.2 Установка пакета etcd на каждом хосте
 ```sh
-yc-user@epd994h503crm15q5jpg:~$ pg_lsclusters
-Ver Cluster Port Status Owner    Data directory              Log file
-16  main    5432 online postgres /var/lib/postgresql/16/main /var/log/postgresql/postgresql-16-main.log
+sudo apt update && sudo apt upgrade -y && sudo apt install -y vim && sudo apt -y install etcd
+sudo systemctl status etcd
+sudo systemctl stop etcd
 ```
-##### Проверка сервиса Postgresql
+##### 2.3 Меняем конфиг файл
+#etcd01
 ```sh
-yc-user@epd994h503crm15q5jpg:~$ sudo systemctl status postgresql
-● postgresql.service - PostgreSQL RDBMS
-     Loaded: loaded (/lib/systemd/system/postgresql.service; enabled; vendor preset: enabled)
-     Active: active (exited) since Wed 2025-10-08 10:45:25 UTC; 5min ago
-   Main PID: 3031 (code=exited, status=0/SUCCESS)
-        CPU: 1ms
-
-Oct 08 10:45:25 epd994h503crm15q5jpg systemd[1]: Starting PostgreSQL RDBMS...
-Oct 08 10:45:25 epd994h503crm15q5jpg systemd[1]: Finished PostgreSQL RDBMS.
+sudo cp etcd01.txt /etc/default/etcd
 ```
-##### Создание БД для урока
+#etcd02
 ```sh
-sudo -u postgres psql -c "create database otus"
-CREATE DATABASE
+sudo cp etcd02.txt /etc/default/etcd
 ```
-### Создание таблицы с данными о перевозках
+#etcd03
 ```sh
-sudo -u postgres psql -d otus
-otus=# create table shipments(id serial, product_name text, quantity int, destination text);
-CREATE TABLE
-otus=# insert into shipments(product_name, quantity, destination) values('bananas', 1000, 'Europe');
-insert into shipments(product_name, quantity, destination) values('bananas', 1500, 'Asia');
-insert into shipments(product_name, quantity, destination) values('bananas', 2000, 'Africa');
-insert into shipments(product_name, quantity, destination) values('coffee', 500, 'USA');
-insert into shipments(product_name, quantity, destination) values('coffee', 700, 'Canada');
-insert into shipments(product_name, quantity, destination) values('coffee', 300, 'Japan');
-insert into shipments(product_name, quantity, destination) values('sugar', 1000, 'Europe');
-insert into shipments(product_name, quantity, destination) values('sugar', 800, 'Asia');
-insert into shipments(product_name, quantity, destination) values('sugar', 600, 'Africa');
-insert into shipments(product_name, quantity, destination) values('sugar', 400, 'USA');
-INSERT 0 1
-INSERT 0 1
-INSERT 0 1
-INSERT 0 1
-INSERT 0 1
-INSERT 0 1
-INSERT 0 1
-INSERT 0 1
-INSERT 0 1
-INSERT 0 1
+sudo cp etcd03.txt /etc/default/etcd
 ```
-### 2. Добавление внешнего диска к виртуальной машине.
-##### Добавляем дополнительно внешний диск в виртуальный хост.
-##### Создание диска https://yandex.cloud/ru/docs/compute/operations/disk-create/empty
+##### 2.4 Рестарт сервиса и проверка etcd
 ```sh
-yc compute disk create --name second-disk --size 50 --description "second disk for database"
+sudo systemctl restart etcd
+export ETCDCTL_API=3
+export ETCDCTL_ENDPOINTS=10.129.0.11:2379,10.129.0.12:2379,10.129.0.13:2379
+etcdctl endpoint status -w table
+etcdctl cluster-health
+etcdctl member list
 ```
-##### Проверка:
+##### 2.5 Доп проверка
+#etcd01
 ```sh
-yc compute disk list
+etcdctl put foo "Hello World"
 ```
-##### Подключение диска в виртуалке https://yandex.cloud/ru/docs/compute/operations/vm-control/vm-attach-disk
+#etcd02
 ```sh
-yc compute instance attach-disk bananaflow-19730802 --disk-name second-disk --mode rw
-```
-##### Проверка:
-```sh
-yc compute instance get --full bananaflow-19730802
-```
-##### Настройка диска в операционке виртуального хоста
-```sh
-ssh -i ~/.ssh/id_rsa yc-user@51.250.31.197
-```
-##### Ищем файл устройства /dev/vdb
-```sh
-ls -la /dev/disk/by-id
-```
-##### Создаём раздел /dev/vdb1 на диске
-```sh
-sudo fdisk /dev/vdb
-```
-##### Создаём файловую систему на новом разделе /dev/vdb1
-```sh
-sudo mkfs.ext4 /dev/vdb1
-...
-Filesystem UUID: 2723f12d-a746-49d1-a389-fe3e7435d22a
-...
-sudo mkdir /var/lib/postgresql/tmp
-sudo mount /dev/vdb1 /var/lib/postgresql/tmp
-sudo chown postgres:postgres /var/lib/postgresql/tmp
-```
-##### Добавляем строку в fstab
-```sh
-sudo vim /etc/fstab
-UUID=2723f12d-a746-49d1-a389-fe3e7435d22a /var/lib/postgresql/16 ext4 defaults 0 2
+export ETCDCTL_API=3
+etcdctl get foo
 ```
 
-### 3. Перенос БД на новый диск через создание физической реплики и переключения на неё.
-##### Делаем slave database
+### 3. Установка Postgresql на четыре хоста
+##### 3.1 Подключение с хоста main
 ```sh
-sudo su - postgres
-mkdir /var/lib/postgresql/tmp/main
-cd /var/lib/postgresql/tmp/main
-pg_basebackup -P -v -D /var/lib/postgresql/tmp/main -Fp -R
-ls -l /var/lib/postgresql/tmp/main
-echo "port=5433" >> /var/lib/postgresql/tmp/main/postgresql.conf
-cp /etc/postgresql/16/main/pg_hba.conf /var/lib/postgresql/tmp/main/
-/usr/lib/postgresql/16/bin/pg_ctl start -D /var/lib/postgresql/tmp/main
+ssh -i ~/.ssh/id_rsa yc-user@pg01
+ssh -i ~/.ssh/id_rsa yc-user@pg01
+ssh -i ~/.ssh/id_rsa yc-user@pg01
 ```
-##### Проверяем работу репликации
-##### master
+##### 3.2 Установка пакетов postgres на каждом хосте и на хосте main
 ```sh
-psql -p 5432 -d otus
-select * from pg_stat_replication;
-insert into shipments(product_name, quantity, destination) values('lemon', 333, 'Russia');
-```
-##### slave
-```sh
-psql -p 5433 -d otus
-select * from pg_stat_wal_receiver;
-select * from shipments where product_name='lemon';
-```
-##### Делаем переключение на новую БД 
-```sh
-/usr/lib/postgresql/16/bin/pg_ctl stop -D /var/lib/postgresql/16/main
-/usr/lib/postgresql/16/bin/pg_ctl promote -D /var/lib/postgresql/tmp/main
-psql -p 5433 -d otus
-alter system reset primary_conninfo ;
-/usr/lib/postgresql/16/bin/pg_ctl stop -D /var/lib/postgresql/tmp/main
-```
-##### Готовим каталоги файловой системы к смене местами:
-```sh
-mv /var/lib/postgresql/16 /var/lib/postgresql/16_old
-mkdir /var/lib/postgresql/16
-rm /var/lib/postgresql/tmp/main/postgresql.conf
-rm /var/lib/postgresql/tmp/main/pg_hba.conf
-du -ms /var/lib/postgresql/
-```
-##### Перегружаем виртуалку
-
-### 4. Проверка что данные сохранились и находятся на новом диске.
-##### проверка что раздел замонтирован
-```sh
-yc-user@epd994h503crm15q5jpg:~$ df -h
-Filesystem      Size  Used Avail Use% Mounted on
-tmpfs           197M  764K  196M   1% /run
-/dev/vda1        19G  2.0G   17G  11% /
-tmpfs           982M  1.1M  981M   1% /dev/shm
-tmpfs           5.0M     0  5.0M   0% /run/lock
-/dev/vdb1        49G   79M   47G   1% /var/lib/postgresql/16
-/dev/vda15      599M  6.1M  593M   2% /boot/efi
-tmpfs           197M     0  197M   0% /run/user/1000
-```
-##### Проверка в БД
-```sh
-sudo -u postgres psql -d otus
-otus=# select * from shipments;
- id | product_name | quantity | destination
-----+--------------+----------+-------------
-  1 | bananas      |     1000 | Europe
-  2 | bananas      |     1500 | Asia
-  3 | bananas      |     2000 | Africa
-  4 | coffee       |      500 | USA
-  5 | coffee       |      700 | Canada
-  6 | coffee       |      300 | Japan
-  7 | sugar        |     1000 | Europe
-  8 | sugar        |      800 | Asia
-  9 | sugar        |      600 | Africa
- 10 | sugar        |      400 | USA
- 11 | lemon        |      333 | Russia
-(11 rows)
-otus=# select * from pg_file_settings ;
-               sourcefile                | sourceline | seqno |            name            |                setting                 | applied | error
------------------------------------------+------------+-------+----------------------------+----------------------------------------+---------+-------
- /etc/postgresql/16/main/postgresql.conf |         42 |     1 | data_directory             | /var/lib/postgresql/16/main            | t       |
- /etc/postgresql/16/main/postgresql.conf |         44 |     2 | hba_file                   | /etc/postgresql/16/main/pg_hba.conf    | t       |
- /etc/postgresql/16/main/postgresql.conf |         46 |     3 | ident_file                 | /etc/postgresql/16/main/pg_ident.conf  | t       |
- /etc/postgresql/16/main/postgresql.conf |         50 |     4 | external_pid_file          | /var/run/postgresql/16-main.pid        | t       |
- /etc/postgresql/16/main/postgresql.conf |         64 |     5 | port                       | 5432                                   | t       |
- /etc/postgresql/16/main/postgresql.conf |         65 |     6 | max_connections            | 100                                    | t       |
- /etc/postgresql/16/main/postgresql.conf |         68 |     7 | unix_socket_directories    | /var/run/postgresql                    | t       |
- /etc/postgresql/16/main/postgresql.conf |        108 |     8 | ssl                        | on                                     | t       |
- /etc/postgresql/16/main/postgresql.conf |        110 |     9 | ssl_cert_file              | /etc/ssl/certs/ssl-cert-snakeoil.pem   | t       |
- /etc/postgresql/16/main/postgresql.conf |        113 |    10 | ssl_key_file               | /etc/ssl/private/ssl-cert-snakeoil.key | t       |
- /etc/postgresql/16/main/postgresql.conf |        130 |    11 | shared_buffers             | 128MB                                  | t       |
- /etc/postgresql/16/main/postgresql.conf |        153 |    12 | dynamic_shared_memory_type | posix                                  | t       |
- /etc/postgresql/16/main/postgresql.conf |        247 |    13 | max_wal_size               | 1GB                                    | t       |
- /etc/postgresql/16/main/postgresql.conf |        248 |    14 | min_wal_size               | 80MB                                   | t       |
- /etc/postgresql/16/main/postgresql.conf |        565 |    15 | log_line_prefix            | %m [%p] %q%u@%d                        | t       |
- /etc/postgresql/16/main/postgresql.conf |        603 |    16 | log_timezone               | Etc/UTC                                | t       |
- /etc/postgresql/16/main/postgresql.conf |        607 |    17 | cluster_name               | 16/main                                | t       |
- /etc/postgresql/16/main/postgresql.conf |        715 |    18 | datestyle                  | iso, mdy                               | t       |
- /etc/postgresql/16/main/postgresql.conf |        717 |    19 | timezone                   | Etc/UTC                                | t       |
- /etc/postgresql/16/main/postgresql.conf |        731 |    20 | lc_messages                | C.UTF-8                                | t       |
- /etc/postgresql/16/main/postgresql.conf |        733 |    21 | lc_monetary                | C.UTF-8                                | t       |
- /etc/postgresql/16/main/postgresql.conf |        734 |    22 | lc_numeric                 | C.UTF-8                                | t       |
- /etc/postgresql/16/main/postgresql.conf |        735 |    23 | lc_time                    | C.UTF-8                                | t       |
- /etc/postgresql/16/main/postgresql.conf |        741 |    24 | default_text_search_config | pg_catalog.english                     | t       |
-(24 rows)
+sudo apt install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && sudo apt-get update && sudo apt -y install postgresql-16  && sudo apt -y install patroni
 ```
 
-otus=#
+### Установка Patroni на три хоста
+##### 4.1 Меняем конфиги БД на хостах pg01 + pg02 + pg03
+```sh
+sudo su postgres
+echo "listen_addresses = '*'">> /etc/postgresql/16/main/postgresql.conf
+vim /etc/postgresql/16/main/pg_hba.conf
+host all all 0.0.0.0/0 scram-sha-256
+host replication all 0.0.0.0/0 scram-sha-256
+```
+##### 4.3 Переносим конфиги БД на хостах pg02 + pg03 для patroni, он ожидает конфиг файл в $PGDATA, иначе не проходит инициализация
+```sh
+sudo -u postgres cp /etc/postgresql/16/main/postgresql.conf /var/lib/postgresql/16/main/
+sudo -u postgres cp -rp /etc/postgresql/16/main/conf.d /var/lib/postgresql/16/main/
+```
+##### 4.3 Останавливаем БД на хостах pg02 + pg03
+```sh
+sudo systemctl stop postgresql
+```
+#pg02
+```sh
+cp patrony_02_config.yml /etc/patroni/config.yml
+```
+#pg03
+```sh
+cp patrony_02_config.yml /etc/patroni/config.yml
+```
+##### 4.4 Останавливаем БД на хосте pg01 и поднимаем её через сервис patroni
+```sh
+create user patroni password 'pat' superuser createdb createrole replication;
+cp patrony_01_config.yml /etc/patroni/config.yml
+sudo -u postgres patroni --validate-config /etc/patroni/config.yml
+sudo vim /etc/patroni/config.yml
+sudo systemctl stop postgresql
+sudo -u postgres cp /etc/postgresql/16/main/postgresql.conf /var/lib/postgresql/16/main/
+sudo -u postgres cp -rp /etc/postgresql/16/main/conf.d /var/lib/postgresql/16/main/
+sudo systemctl restart patroni
+patronictl -c /etc/patroni/config.yml show-config
+patronictl -c /etc/patroni/config.yml list
+```
+##### 4.5 Выключаем сервис postgresql pg01
+```sh
+sudo systemctl disable postgresql
+```
+##### 4.6 Восстанавливаем реплики на хостах pg02 + pg03
+```sh
+rm -rf /var/lib/postgresql/16/main/*
+sudo vim /etc/patroni/config.yml
+sudo systemctl restart patroni
+patronictl -c /etc/patroni/config.yml list
+sudo systemctl disable postgresql
+```
+
+### 5. Тест Patroni
+##### 5.1 Создаём таблицу на master БД pg01
+```sh
+sudo -u postgres psql -h pg01 -U patroni postgres
+select pg_is_in_recovery();
+select * from pg_get_replication_slots();
+create database otus;
+\c otus
+create table mytest (id serial);
+insert into mytest values (default);
+select * from mytest;
+```
+##### 5.2 Проверяем репликацию на pg02
+```sh
+sudo -u postgres psql -h pg02 -U patroni otus
+select * from mytest;
+select pg_is_in_recovery();
+select now()-pg_last_xact_replay_timestamp() as replay_lag;
+```
+##### 5.3 Делаем switchover
+```sh
+patronictl -c /etc/patroni/config.yml list
+patronictl -c /etc/patroni/config.yml switchover
+```
+
+### 6. Установка Haproxy
+##### 6.1 Переносим конфиги на хосте main
+```sh
+sudo cp haproxy.cfg /etc/haproxy/haproxy.cfg
+sudo haproxy -c -V -f /etc/haproxy/haproxy.cfg
+```
+##### 6.2 Рестартуем сервис
+```sh
+sudo haproxy -c -V -f /etc/haproxy/haproxy.cfg
+sudo systemctl restart haproxy
+sudo systemctl status haproxy
+```
+
+### 7. Тест Patroni+Haproxy
+##### 7.1 Соединение через Haproxy
+```sh
+sudo -u postgres psql -h 51.250.31.197 -U patroni -p 5555 otus
+```
+##### 7.2 Переключение БД
+```sh
+select pg_read_file('/etc/hostname');
+patronictl -c /etc/patroni/config.yml switchover
+select pg_read_file('/etc/hostname');
+```
+##### 7.3 Остановка хоста с БД в роли master 
+```sh
+yc compute instance stop bananaflow-19730802-pg02
+select pg_read_file('/etc/hostname');
+```
+
+### 8. Удаление стенда
+```sh
+./hosts.sh delete
+```
