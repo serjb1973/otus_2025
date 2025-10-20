@@ -107,18 +107,18 @@ Hello World
 yc-user@etcd02:~$
 ```
 
-### 3. Установка Postgresql на четыре хоста
+### 3. Установка Postgresql
 ##### 3.1 Подключение с хоста main
 ```sh
 ssh -i ~/.ssh/id_rsa yc-user@pg01
 ssh -i ~/.ssh/id_rsa yc-user@pg02
 ```
-##### 3.2 Установка пакетов postgres на каждом хосте и на хосте main
+##### 3.2 Установка пакетов postgres на каждом хосте
 ```sh
 sudo apt install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && sudo apt-get update && sudo apt -y install postgresql-16  && sudo apt -y install patroni
 ```
 
-### Установка Patroni на три хоста
+### Установка Patroni
 ##### 4.1 Меняем конфиги БД на хостах pg01 + pg02
 ```sh
 sudo su postgres
@@ -135,9 +135,6 @@ sudo -u postgres cp -rp /etc/postgresql/16/main/conf.d /var/lib/postgresql/16/ma
 ```sh
 sudo systemctl stop postgresql
 sudo systemctl stop patroni
-```
-#pg02
-```sh
 sudo wget -O /etc/patroni/config.yml https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/patroni_02_config.yml
 sudo cat /etc/patroni/config.yml
 ```
@@ -150,9 +147,6 @@ sudo systemctl stop patroni
 sudo wget -O /etc/patroni/config.yml https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/patroni_01_config.yml
 sudo -u postgres patroni --validate-config /etc/patroni/config.yml
 sudo vim /etc/patroni/config.yml
-sudo systemctl stop postgresql
-sudo -u postgres cp /etc/postgresql/16/main/postgresql.conf /var/lib/postgresql/16/main/
-sudo -u postgres cp -rp /etc/postgresql/16/main/conf.d /var/lib/postgresql/16/main/
 sudo systemctl restart patroni
 patronictl -c /etc/patroni/config.yml show-config
 patronictl -c /etc/patroni/config.yml list
@@ -161,7 +155,7 @@ patronictl -c /etc/patroni/config.yml list
 ```sh
 sudo systemctl disable postgresql
 ```
-##### 4.6 Восстанавливаем реплики на pg02 
+##### 4.6 Восстанавливаем реплику на pg02 
 ```sh
 sudo rm -rf /var/lib/postgresql/16/main/*
 sudo vim /etc/patroni/config.yml
