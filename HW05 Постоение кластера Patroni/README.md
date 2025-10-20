@@ -52,16 +52,15 @@ sudo systemctl stop etcd
 ##### 2.3 Меняем конфиг файл
 #etcd01
 ```sh
-sudo wget -O etcd -P /etc/default https://github.com/serjb1973/otus_2025/blob/main/HW05%20Постоение%20кластера%20Patroni/etcd01
-sudo cp etcd01.txt /etc/default/etcd
+sudo wget -O /etc/default/etcd https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/etcd01
 ```
 #etcd02
 ```sh
-sudo cp etcd02.txt /etc/default/etcd
+sudo wget -O /etc/default/etcd https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/etcd02
 ```
 #etcd03
 ```sh
-sudo cp etcd03.txt /etc/default/etcd
+sudo wget -O /etc/default/etcd https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/etcd03
 ```
 ##### 2.4 Рестарт сервиса и проверка etcd
 ```sh
@@ -69,18 +68,33 @@ sudo systemctl restart etcd
 export ETCDCTL_API=3
 export ETCDCTL_ENDPOINTS=10.129.0.11:2379,10.129.0.12:2379,10.129.0.13:2379
 etcdctl endpoint status -w table
-etcdctl cluster-health
++------------------+------------------+---------+---------+-----------+-----------+------------+
+|     ENDPOINT     |        ID        | VERSION | DB SIZE | IS LEADER | RAFT TERM | RAFT INDEX |
++------------------+------------------+---------+---------+-----------+-----------+------------+
+| 10.129.0.11:2379 | cbebe40647788a92 |  3.3.25 |   20 kB |     false |         5 |          9 |
+| 10.129.0.12:2379 | f2a1b7d07b486f3e |  3.3.25 |   20 kB |     false |         5 |          9 |
+| 10.129.0.13:2379 | b1b546f51ce9d0a8 |  3.3.25 |   20 kB |      true |         5 |          9 |
++------------------+------------------+---------+---------+-----------+-----------+------------+
 etcdctl member list
+yc-user@etcd01:~$ etcdctl member list
+b1b546f51ce9d0a8, started, etcd03, http://10.129.0.13:2380, http://10.129.0.13:2379
+cbebe40647788a92, started, etcd01, http://10.129.0.11:2380, http://10.129.0.11:2379
+f2a1b7d07b486f3e, started, etcd02, http://10.129.0.12:2380, http://10.129.0.12:2379
+yc-user@etcd01:~$
 ```
 ##### 2.5 Доп проверка
 #etcd01
 ```sh
-etcdctl put foo "Hello World"
+yc-user@etcd01:~$ etcdctl put foo "Hello World"
+OK
 ```
 #etcd02
 ```sh
-export ETCDCTL_API=3
+yc-user@etcd02:~$ export ETCDCTL_API=3
 etcdctl get foo
+foo
+Hello World
+yc-user@etcd02:~$
 ```
 
 ### 3. Установка Postgresql на четыре хоста
