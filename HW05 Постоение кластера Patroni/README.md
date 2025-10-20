@@ -3,10 +3,20 @@
 Цель:
 - развернуть отказоустойчивый кластер PostgreSQL с Patroni
 
-### 1. Cоздание стенда из 7 хостов = 3 etcd + 3 postgres + 1 main
+### 1. Cоздание стенда из 7 хостов = 3 etcd + 2 postgres + 1 main
 ##### 1.1 Создание хостов одним скриптом
 ```sh
-./hosts_create.sh 3 3
+./hosts_create.sh 3 2
++----------------------+----------------------------+---------------+---------+----------------+--------------+
+|          ID          |            NAME            |    ZONE ID    | STATUS  |  EXTERNAL IP   | INTERNAL IP  |
++----------------------+----------------------------+---------------+---------+----------------+--------------+
+| epd0mbfkodlgfc0tajor | bananaflow-19730802-pg02   | ru-central1-b | RUNNING | 51.250.110.151 | 10.129.0.22  |
+| epd9caboje7daoq32313 | bananaflow-19730802-etcd01 | ru-central1-b | RUNNING | 89.169.161.178 | 10.129.0.11  |
+| epdal79rhhdgd44rifc6 | bananaflow-19730802-pg01   | ru-central1-b | RUNNING | 89.169.181.44  | 10.129.0.21  |
+| epdgv7fhchu16nc2u77q | bananaflow-19730802-main   | ru-central1-b | RUNNING | 51.250.31.197  | 10.129.0.101 |
+| epdiosm6tidu39hjkksm | bananaflow-19730802-etcd02 | ru-central1-b | RUNNING | 89.169.166.141 | 10.129.0.12  |
+| epdj7pf88airbrbmo48m | bananaflow-19730802-etcd03 | ru-central1-b | RUNNING | 89.169.181.216 | 10.129.0.13  |
++----------------------+----------------------------+---------------+---------+----------------+--------------+
 ```
 Просмотр списка виртаульных машин
 ```sh
@@ -101,8 +111,7 @@ yc-user@etcd02:~$
 ##### 3.1 Подключение с хоста main
 ```sh
 ssh -i ~/.ssh/id_rsa yc-user@pg01
-ssh -i ~/.ssh/id_rsa yc-user@pg01
-ssh -i ~/.ssh/id_rsa yc-user@pg01
+ssh -i ~/.ssh/id_rsa yc-user@pg02
 ```
 ##### 3.2 Установка пакетов postgres на каждом хосте и на хосте main
 ```sh
@@ -110,7 +119,7 @@ sudo apt install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/
 ```
 
 ### Установка Patroni на три хоста
-##### 4.1 Меняем конфиги БД на хостах pg01 + pg02 + pg03
+##### 4.1 Меняем конфиги БД на хостах pg01 + pg02
 ```sh
 sudo su postgres
 echo "listen_addresses = '*'">> /etc/postgresql/16/main/postgresql.conf
@@ -118,12 +127,12 @@ vim /etc/postgresql/16/main/pg_hba.conf
 host all all 0.0.0.0/0 scram-sha-256
 host replication all 0.0.0.0/0 scram-sha-256
 ```
-##### 4.3 Переносим конфиги БД на хостах pg02 + pg03 для patroni, он ожидает конфиг файл в $PGDATA, иначе не проходит инициализация
+##### 4.3 Переносим конфиги БД на хост pg02 для patroni, он ожидает конфиг файл в $PGDATA, иначе не проходит инициализация
 ```sh
 sudo -u postgres cp /etc/postgresql/16/main/postgresql.conf /var/lib/postgresql/16/main/
 sudo -u postgres cp -rp /etc/postgresql/16/main/conf.d /var/lib/postgresql/16/main/
 ```
-##### 4.3 Останавливаем БД на хостах pg02 + pg03
+##### 4.3 Останавливаем БД на хосте pg02
 ```sh
 sudo systemctl stop postgresql
 ```
@@ -131,10 +140,7 @@ sudo systemctl stop postgresql
 ```sh
 cp patrony_02_config.yml /etc/patroni/config.yml
 ```
-#pg03
-```sh
-cp patrony_02_config.yml /etc/patroni/config.yml
-```
+
 ##### 4.4 Останавливаем БД на хосте pg01 и поднимаем её через сервис patroni
 ```sh
 create user patroni password 'pat' superuser createdb createrole replication;
@@ -152,7 +158,7 @@ patronictl -c /etc/patroni/config.yml list
 ```sh
 sudo systemctl disable postgresql
 ```
-##### 4.6 Восстанавливаем реплики на хостах pg02 + pg03
+##### 4.6 Восстанавливаем реплики на pg02 
 ```sh
 rm -rf /var/lib/postgresql/16/main/*
 sudo vim /etc/patroni/config.yml
