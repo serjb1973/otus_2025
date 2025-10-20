@@ -15,7 +15,7 @@ yc compute instance create \
   --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-2204-lts,auto-delete,type=network-hdd,size=$3GB \
   --name bananaflow-19730802-$1 \
   --hostname $1  \
-  --network-interface subnet-id=$var_subnet,address=$2 \
+  --network-interface subnet-id=$var_subnet,address=$2,nat-ip-version=ipv4 \
   --ssh-key ~/.ssh/id_rsa.pub \
   --memory 2GB --cores 2 --core-fraction 20 --preemptible 
 }
