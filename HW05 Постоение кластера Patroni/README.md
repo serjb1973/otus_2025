@@ -123,9 +123,8 @@ sudo apt install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/
 ```sh
 sudo su postgres
 echo "listen_addresses = '*'">> /etc/postgresql/16/main/postgresql.conf
-vim /etc/postgresql/16/main/pg_hba.conf
-host all all 0.0.0.0/0 scram-sha-256
-host replication all 0.0.0.0/0 scram-sha-256
+echo "host all all 0.0.0.0/0 scram-sha-256">>/etc/postgresql/16/main/pg_hba.conf
+echo "host replication all 0.0.0.0/0 scram-sha-256">>/etc/postgresql/16/main/pg_hba.conf
 ```
 ##### 4.3 Переносим конфиги БД на хост pg02 для patroni, он ожидает конфиг файл в $PGDATA, иначе не проходит инициализация
 ```sh
@@ -135,16 +134,20 @@ sudo -u postgres cp -rp /etc/postgresql/16/main/conf.d /var/lib/postgresql/16/ma
 ##### 4.3 Останавливаем БД на хосте pg02
 ```sh
 sudo systemctl stop postgresql
+sudo systemctl stop patroni
 ```
 #pg02
 ```sh
-wget -O /etc/patroni/config.yml https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/patroni_02_config.yml
+sudo wget -O /etc/patroni/config.yml https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/patroni_02_config.yml
+sudo cat /etc/patroni/config.yml
 ```
 
 ##### 4.4 Останавливаем БД на хосте pg01 и поднимаем её через сервис patroni
 ```sh
+sudo -u postgres psql
 create user patroni password 'pat' superuser createdb createrole replication;
-wget -O /etc/patroni/config.yml https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/patroni_02_config.yml
+sudo systemctl stop patroni
+sudo wget -O /etc/patroni/config.yml https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/patroni_01_config.yml
 sudo -u postgres patroni --validate-config /etc/patroni/config.yml
 sudo vim /etc/patroni/config.yml
 sudo systemctl stop postgresql
@@ -160,7 +163,7 @@ sudo systemctl disable postgresql
 ```
 ##### 4.6 Восстанавливаем реплики на pg02 
 ```sh
-rm -rf /var/lib/postgresql/16/main/*
+sudo rm -rf /var/lib/postgresql/16/main/*
 sudo vim /etc/patroni/config.yml
 sudo systemctl restart patroni
 patronictl -c /etc/patroni/config.yml list
