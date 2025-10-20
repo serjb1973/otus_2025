@@ -138,13 +138,13 @@ sudo systemctl stop postgresql
 ```
 #pg02
 ```sh
-cp patrony_02_config.yml /etc/patroni/config.yml
+wget -O /etc/patroni/config.yml https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/patroni_02_config.yml
 ```
 
 ##### 4.4 Останавливаем БД на хосте pg01 и поднимаем её через сервис patroni
 ```sh
 create user patroni password 'pat' superuser createdb createrole replication;
-cp patrony_01_config.yml /etc/patroni/config.yml
+wget -O /etc/patroni/config.yml https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/patroni_02_config.yml
 sudo -u postgres patroni --validate-config /etc/patroni/config.yml
 sudo vim /etc/patroni/config.yml
 sudo systemctl stop postgresql
