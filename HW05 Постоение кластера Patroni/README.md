@@ -52,6 +52,7 @@ sudo systemctl stop etcd
 ##### 2.3 Меняем конфиг файл
 #etcd01
 ```sh
+sudo wget -O etcd -P /etc/default https://github.com/serjb1973/otus_2025/blob/main/HW05%20Постоение%20кластера%20Patroni/etcd01
 sudo cp etcd01.txt /etc/default/etcd
 ```
 #etcd02
