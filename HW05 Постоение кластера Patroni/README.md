@@ -326,7 +326,7 @@ otus=# select pg_read_file('/etc/hostname');
 --------------
  pg01        +
 ```
-##### 7.4 Остановка хоста с БД в роли master 
+##### 7.4 Остановка хоста с БД в роли master - failover
 ```sh
 yc compute instance stop bananaflow-19730802-pg01
 ```
