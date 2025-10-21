@@ -126,20 +126,17 @@ echo "listen_addresses = '*'">> /etc/postgresql/16/main/postgresql.conf
 echo "host all all 0.0.0.0/0 scram-sha-256">>/etc/postgresql/16/main/pg_hba.conf
 echo "host replication all 0.0.0.0/0 scram-sha-256">>/etc/postgresql/16/main/pg_hba.conf
 ```
-##### 4.3 Переносим конфиги БД на хост pg02 для patroni, он ожидает конфиг файл в $PGDATA, иначе не проходит инициализация
-```sh
-sudo -u postgres cp /etc/postgresql/16/main/postgresql.conf /var/lib/postgresql/16/main/
-sudo -u postgres cp -rp /etc/postgresql/16/main/conf.d /var/lib/postgresql/16/main/
-```
-##### 4.3 Останавливаем БД на хосте pg02
+##### 4.2 Останавливаем и удаляем БД на хосте pg02
 ```sh
 sudo systemctl stop postgresql
+sudo systemctl disable postgresql
+sudo rm -rf /var/lib/postgresql/16/main/*
 sudo systemctl stop patroni
 sudo wget -O /etc/patroni/config.yml https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/patroni_02_config.yml
 sudo cat /etc/patroni/config.yml
 ```
 
-##### 4.4 Останавливаем БД на хосте pg01 и поднимаем её через сервис patroni
+##### 4.3 Останавливаем БД на хосте pg01 и поднимаем её через сервис patroni
 ```sh
 sudo -u postgres psql
 create user patroni password 'pat' superuser createdb createrole replication;
@@ -147,46 +144,123 @@ sudo systemctl stop patroni
 sudo wget -O /etc/patroni/config.yml https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/patroni_01_config.yml
 sudo -u postgres patroni --validate-config /etc/patroni/config.yml
 sudo vim /etc/patroni/config.yml
-sudo systemctl restart patroni
+sudo systemctl stop postgresql
+sudo systemctl disable postgresql
+sudo systemctl start patroni
 patronictl -c /etc/patroni/config.yml show-config
 patronictl -c /etc/patroni/config.yml list
+yc-user@pg01:~$ patronictl -c /etc/patroni/config.yml list
++ Cluster: 16/main (7563341935804649837) -+----+-----------+
+| Member | Host        | Role   | State   | TL | Lag in MB |
++--------+-------------+--------+---------+----+-----------+
+| pg01   | 10.129.0.21 | Leader | running |  2 |           |
++--------+-------------+--------+---------+----+-----------+
 ```
-##### 4.5 Выключаем сервис postgresql pg01
+##### 4.4 Восстанавливаем реплику на pg02 
 ```sh
-sudo systemctl disable postgresql
-```
-##### 4.6 Восстанавливаем реплику на pg02 
-```sh
-sudo rm -rf /var/lib/postgresql/16/main/*
-sudo vim /etc/patroni/config.yml
-sudo systemctl restart patroni
+sudo systemctl start patroni
 patronictl -c /etc/patroni/config.yml list
-sudo systemctl disable postgresql
+yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml list
++ Cluster: 16/main (7563341935804649837) ----+----+-----------+
+| Member | Host        | Role    | State     | TL | Lag in MB |
++--------+-------------+---------+-----------+----+-----------+
+| pg01   | 10.129.0.21 | Leader  | running   |  2 |           |
+| pg02   | 10.129.0.22 | Replica | streaming |  2 |         0 |
++--------+-------------+---------+-----------+----+-----------+
 ```
 
 ### 5. Тест Patroni
 ##### 5.1 Создаём таблицу на master БД pg01
 ```sh
 sudo -u postgres psql -h pg01 -U patroni postgres
-select pg_is_in_recovery();
+postgres=# select pg_read_file('/etc/hostname');
+ pg_read_file
+--------------
+ pg01        +
+postgres=# select pg_is_in_recovery();
+ pg_is_in_recovery
+-------------------
+ f
+(1 row)
 select * from pg_get_replication_slots();
+postgres=# select * from pg_get_replication_slots();
+ slot_name | plugin | slot_type | datoid | temporary | active | active_pid | xmin | catalog_xmin | restart_lsn | confirmed_flush_lsn | wal_status | safe_wal_size | two_phase | conflicting
+-----------+--------+-----------+--------+-----------+--------+------------+------+--------------+-------------+---------------------+------------+---------------+-----------+-------------
+ pg02      |        | physical  |        | f         | t      |       1115 |      |              | 0/3000148   |                     | reserved   |               | f         |
+(1 row)
 create database otus;
 \c otus
 create table mytest (id serial);
 insert into mytest values (default);
-select * from mytest;
+otus=# select * from mytest;
+ id
+----
+  1
+(1 row)
 ```
 ##### 5.2 Проверяем репликацию на pg02
 ```sh
 sudo -u postgres psql -h pg02 -U patroni otus
-select * from mytest;
-select pg_is_in_recovery();
-select now()-pg_last_xact_replay_timestamp() as replay_lag;
+otus=# select pg_read_file('/etc/hostname');
+ pg_read_file
+--------------
+ pg02        +
+
+(1 row)
+
+otus=# select * from mytest;
+ id
+----
+  1
+(1 row)
+
+otus=# select pg_is_in_recovery();
+ pg_is_in_recovery
+-------------------
+ t
+(1 row)
+
+otus=# select now()-pg_last_xact_replay_timestamp() as replay_lag;
+   replay_lag
+-----------------
+ 00:01:32.959131
+(1 row)
 ```
 ##### 5.3 Делаем switchover
 ```sh
-patronictl -c /etc/patroni/config.yml list
-patronictl -c /etc/patroni/config.yml switchover
+yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml list
++ Cluster: 16/main (7563341935804649837) ----+----+-----------+
+| Member | Host        | Role    | State     | TL | Lag in MB |
++--------+-------------+---------+-----------+----+-----------+
+| pg01   | 10.129.0.21 | Leader  | running   |  2 |           |
+| pg02   | 10.129.0.22 | Replica | streaming |  2 |         0 |
++--------+-------------+---------+-----------+----+-----------+
+yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml switchover
+Current cluster topology
++ Cluster: 16/main (7563341935804649837) ----+----+-----------+
+| Member | Host        | Role    | State     | TL | Lag in MB |
++--------+-------------+---------+-----------+----+-----------+
+| pg01   | 10.129.0.21 | Leader  | running   |  2 |           |
+| pg02   | 10.129.0.22 | Replica | streaming |  2 |         0 |
++--------+-------------+---------+-----------+----+-----------+
+Primary [pg01]:
+Candidate ['pg02'] []:
+When should the switchover take place (e.g. 2025-10-21T16:54 )  [now]:
+Are you sure you want to switchover cluster 16/main, demoting current leader pg01? [y/N]: y
+2025-10-21 15:54:43.35232 Successfully switched over to "pg02"
++ Cluster: 16/main (7563341935804649837) --+----+-----------+
+| Member | Host        | Role    | State   | TL | Lag in MB |
++--------+-------------+---------+---------+----+-----------+
+| pg01   | 10.129.0.21 | Replica | stopped |    |   unknown |
+| pg02   | 10.129.0.22 | Leader  | running |  2 |           |
++--------+-------------+---------+---------+----+-----------+
+yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml list
++ Cluster: 16/main (7563341935804649837) ----+----+-----------+
+| Member | Host        | Role    | State     | TL | Lag in MB |
++--------+-------------+---------+-----------+----+-----------+
+| pg01   | 10.129.0.21 | Replica | streaming |  3 |         0 |
+| pg02   | 10.129.0.22 | Leader  | running   |  3 |           |
++--------+-------------+---------+-----------+----+-----------+
 ```
 
 ### 6. Установка Haproxy
