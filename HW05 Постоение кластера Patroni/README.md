@@ -34,7 +34,7 @@ yc compute instance stop --name bananaflow-19730802-main
 yc compute instance start --name bananaflow-19730802-main
 yc compute instance delete --name bananaflow-19730802-main
 ```
-##### 1.2 Перенос ключа на ност main, дял удобства работы со стендом
+##### 1.2 Перенос ключа на ност main, для удобства работы со стендом
 ```sh
 scp -i ~/.ssh/id_rsa -R ~/.ssh/id_rsa yc-user@51.250.31.197:~/.ssh/  
 ssh -i ~/.ssh/id_rsa yc-user@51.250.31.197
