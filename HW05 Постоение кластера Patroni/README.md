@@ -266,13 +266,13 @@ yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml list
 ### 6. Установка Haproxy
 ##### 6.1 Переносим конфиги на хосте main
 ```sh
-sudo cp haproxy.cfg /etc/haproxy/haproxy.cfg
-sudo haproxy -c -V -f /etc/haproxy/haproxy.cfg
+sudo systemctl stop haproxy
+sudo wget -O /etc/haproxy/haproxy.cfg https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/haproxy.cfg
 ```
 ##### 6.2 Рестартуем сервис
 ```sh
 sudo haproxy -c -V -f /etc/haproxy/haproxy.cfg
-sudo systemctl restart haproxy
+sudo systemctl start haproxy
 sudo systemctl status haproxy
 ```
 
@@ -280,17 +280,111 @@ sudo systemctl status haproxy
 ##### 7.1 Соединение через Haproxy
 ```sh
 sudo -u postgres psql -h 51.250.31.197 -U patroni -p 5555 otus
+otus=# select pg_read_file('/etc/hostname');
+ pg_read_file
+--------------
+ pg02        +
 ```
 ##### 7.2 Переключение БД
 ```sh
-select pg_read_file('/etc/hostname');
-patronictl -c /etc/patroni/config.yml switchover
-select pg_read_file('/etc/hostname');
+yc-user@pg01:~$ patronictl -c /etc/patroni/config.yml switchover
+Current cluster topology
++ Cluster: 16/main (7563341935804649837) ----+----+-----------+
+| Member | Host        | Role    | State     | TL | Lag in MB |
++--------+-------------+---------+-----------+----+-----------+
+| pg01   | 10.129.0.21 | Replica | streaming |  3 |         0 |
+| pg02   | 10.129.0.22 | Leader  | running   |  3 |           |
++--------+-------------+---------+-----------+----+-----------+
+Primary [pg02]:
+Candidate ['pg01'] []:
+When should the switchover take place (e.g. 2025-10-21T17:12 )  [now]:
+Are you sure you want to switchover cluster 16/main, demoting current leader pg02? [y/N]: y
+2025-10-21 16:12:45.94027 Successfully switched over to "pg01"
++ Cluster: 16/main (7563341935804649837) --+----+-----------+
+| Member | Host        | Role    | State   | TL | Lag in MB |
++--------+-------------+---------+---------+----+-----------+
+| pg01   | 10.129.0.21 | Leader  | running |  3 |           |
+| pg02   | 10.129.0.22 | Replica | stopped |    |   unknown |
++--------+-------------+---------+---------+----+-----------+
+yc-user@pg01:~$ patronictl -c /etc/patroni/config.yml list
++ Cluster: 16/main (7563341935804649837) ----+----+-----------+
+| Member | Host        | Role    | State     | TL | Lag in MB |
++--------+-------------+---------+-----------+----+-----------+
+| pg01   | 10.129.0.21 | Leader  | running   |  4 |           |
+| pg02   | 10.129.0.22 | Replica | streaming |  4 |         0 |
++--------+-------------+---------+-----------+----+-----------+
 ```
-##### 7.3 Остановка хоста с БД в роли master 
+##### 7.3 Соединение через Haproxy после switchover в той же сессии
 ```sh
-yc compute instance stop bananaflow-19730802-pg02
-select pg_read_file('/etc/hostname');
+otus=# select pg_read_file('/etc/hostname');
+FATAL:  terminating connection due to administrator command
+SSL connection has been closed unexpectedly
+The connection to the server was lost. Attempting reset: Succeeded.
+SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off)
+otus=# select pg_read_file('/etc/hostname');
+ pg_read_file
+--------------
+ pg01        +
+```
+##### 7.4 Остановка хоста с БД в роли master 
+```sh
+yc compute instance stop bananaflow-19730802-pg01
+```
+##### 7.5 Соединение через Haproxy после failover в той же сессии
+```sh
+otus=# select pg_read_file('/etc/hostname');
+FATAL:  terminating connection due to administrator command
+SSL connection has been closed unexpectedly
+The connection to the server was lost. Attempting reset: Succeeded.
+SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off)
+otus=# select pg_read_file('/etc/hostname');
+ pg_read_file
+--------------
+ pg02        +
+```
+##### 7.6 Проверка состояния patroni после failover
+```sh
+yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml list
++ Cluster: 16/main (7563341935804649837) -+----+-----------+
+| Member | Host        | Role   | State   | TL | Lag in MB |
++--------+-------------+--------+---------+----+-----------+
+| pg02   | 10.129.0.22 | Leader | running |  5 |           |
++--------+-------------+--------+---------+----+-----------+
+yc-user@pg02:~$
+```
+##### 7.7 Старт упавшего хоста хоста с БД в роли master 
+```sh
+yc compute instance start bananaflow-19730802-pg01
+```
+##### 7.8 Проверка состояния patroni после старта хоста после падения
+```sh
+yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml list
++ Cluster: 16/main (7563341935804649837) -+----+-----------+
+| Member | Host        | Role   | State   | TL | Lag in MB |
++--------+-------------+--------+---------+----+-----------+
+| pg02   | 10.129.0.22 | Leader | running |  5 |           |
++--------+-------------+--------+---------+----+-----------+
+yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml list
++ Cluster: 16/main (7563341935804649837) --+----+-----------+
+| Member | Host        | Role    | State   | TL | Lag in MB |
++--------+-------------+---------+---------+----+-----------+
+| pg01   | 10.129.0.21 | Replica | stopped |    |   unknown |
+| pg02   | 10.129.0.22 | Leader  | running |  5 |           |
++--------+-------------+---------+---------+----+-----------+
+yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml list
++ Cluster: 16/main (7563341935804649837) ---+----+-----------+
+| Member | Host        | Role    | State    | TL | Lag in MB |
++--------+-------------+---------+----------+----+-----------+
+| pg01   | 10.129.0.21 | Replica | starting |    |   unknown |
+| pg02   | 10.129.0.22 | Leader  | running  |  5 |           |
++--------+-------------+---------+----------+----+-----------+
+yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml list
++ Cluster: 16/main (7563341935804649837) ----+----+-----------+
+| Member | Host        | Role    | State     | TL | Lag in MB |
++--------+-------------+---------+-----------+----+-----------+
+| pg01   | 10.129.0.21 | Replica | streaming |  5 |         0 |
+| pg02   | 10.129.0.22 | Leader  | running   |  5 |           |
++--------+-------------+---------+-----------+----+-----------+
 ```
 
 ### 8. Удаление стенда
