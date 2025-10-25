@@ -42,19 +42,28 @@ sudo apt update && sudo apt upgrade -y && sudo apt install -y vim && sudo apt in
 ```
 
 ### 2. Настройка SSH
-##### 2.1 Генерация ключей хосты pg01 pg03
+##### 2.1 Генерация ключей хосты pg01 pg03 и копирование открытого ключа
 ```sh
-ssh -i ~/.ssh/id_rsa yc-user@etcd01
-ssh -i ~/.ssh/id_rsa yc-user@etcd02
-ssh -i ~/.ssh/id_rsa yc-user@etcd03
+sudo -u postgres ssh-keygen
+sudo cat /var/lib/postgresql/.ssh/id_rsa.pub
 ```
-##### 2.2 Установка пакета etcd на каждом хосте
+##### 2.2 Хост pg02 добавление в доверенные хостов pg01 pg03
 ```sh
-sudo apt update && sudo apt upgrade -y && sudo apt install -y vim && sudo apt -y install etcd
-sudo systemctl status etcd
-sudo systemctl stop etcd
+sudo -u postgres vim /var/lib/postgresql/.ssh/authorized_keys 
 ```
-##### 2.3 Меняем конфиг файл
+вставка строк(пример):
+```sh
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC+h+sCDGnJXmkskkTHBZ1sbGCn8+QOaE+uvqDa4a/OwnCfQ7ktdTvaLhQPPp6yvEkIpgouRt9oH7ygxCUcM9NXdJxs64MPv/wH0mNL9+eYv2ukC6acvQZfMb78Q8X24qO3kPS/zs20srGaKseiTtf6SZjMAwAl35a/CirNT2m5bKG0EUsGZIH5MDCGnLpTJn1pFKqkdDdQNMUd1WFCa14tjsYKpRxBXTv4LxuSa/ItfF8wWhD7nSsPNFnJwRzgSKIZlDCVSvtLmx6ZRe+3ovi/RZyWryGR/e0ALj5IdYxXFBluHrv0CWHpcIo0MuXn1ufDKRirO5Hkb78DPAcqUaqENBkJ+0HqahJ4m+z5zkQWlUNxB+hsc0vpZBIKcB3FNb/8Hw7weZ+VK8C9Xl5DK/Fj4e0zQ7buWSdA+43Pfm2LhVGxpTQVaYx1k/Dvwes7LbFhjqPEuKwPsMGfH1AJskEKfhdX19+enPv9NO5jbkSwGCiKxwxAokGCNQeqpi9QCLM= postgres@pg01
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDWVO8MfnlXHRj3P2rarRX0H7Spbyv5etJwMA3PXtsr7UlJWz7OpbqlbatflCIDnNm1xa5PNKoCGNvTW2EBE4bN1N5fxD6AdgImyuH7lINJ9drj3IcI22YFAExrQGOuJzkKahIfmDaQo8lRPlsTCNLak1GhL28T6JsfwXI0OswIyIIgvZChfk/dxrVS1vz+pg/sCLt7KBwpOELjzIHWxlMK0sTd2TCMe0oMpsOipmO+Kdv+da7beyZUSAL77sSZa074XZZapJ4nANkbq51Nz3lOkl8kjYi4BPy1gPLRuW9MqlX0Y4LBoyJ4EiR6+/eK3Z3ie+o1vzKvSeaFtoZBzhOyt3HzqNfsyuYoP2EjcbgYUbNsGfD6yjh5u40rSwnzUswGGAO2Min6O76UIOewUQksqKi62ygIdsnoI/jhcJK4JAJNBo/FMqifKDsp76zdAzEO3psJRX7IsZpJrVJksD3PZU7JrsZXBPBhiE/MxT2J5RzhPaKV/TEKAh4K3TdqNVc= postgres@pg03
+```
+##### 2.3 Тест ssh с хостов pg01 pg03
+ssh test
+```sh
+sudo -u postgres ssh pg02 date 
+```
+
+
+
 #etcd01
 ```sh
 sudo wget -O /etc/default/etcd https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/etcd01
