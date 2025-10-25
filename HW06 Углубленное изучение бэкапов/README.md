@@ -20,17 +20,17 @@
 +----------------------+--------------------------+---------------+---------+----------------+-------------+
 
 ```
-Просмотр списка виртаульных машин
+###### Просмотр списка виртаульных машин
 ```sh
 yc compute instance list
 ```
-Управление виртуальными машинами
+###### Управление виртуальными машинами
 ```sh
 ./hosts.sh stop
 ./hosts.sh start
 ./hosts.sh delete
 ```
-Управление отдельной машиной
+###### Управление отдельной машиной
 ```sh
 yc compute instance stop --name bananaflow-19730802-pg01
 yc compute instance start --name bananaflow-19730802-pg01
@@ -51,7 +51,7 @@ sudo cat /var/lib/postgresql/.ssh/id_rsa.pub
 ```sh
 sudo -u postgres vim /var/lib/postgresql/.ssh/authorized_keys 
 ```
-вставка строк из пункта 2.1(пример):
+###### вставка строк из пункта 2.1(пример):
 ```sh
 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC+h+sCDGnJXmkskkTHBZ1sbGCn8+QOaE+uvqDa4a/OwnCfQ7ktdTvaLhQPPp6yvEkIpgouRt9oH7ygxCUcM9NXdJxs64MPv/wH0mNL9+eYv2ukC6acvQZfMb78Q8X24qO3kPS/zs20srGaKseiTtf6SZjMAwAl35a/CirNT2m5bKG0EUsGZIH5MDCGnLpTJn1pFKqkdDdQNMUd1WFCa14tjsYKpRxBXTv4LxuSa/ItfF8wWhD7nSsPNFnJwRzgSKIZlDCVSvtLmx6ZRe+3ovi/RZyWryGR/e0ALj5IdYxXFBluHrv0CWHpcIo0MuXn1ufDKRirO5Hkb78DPAcqUaqENBkJ+0HqahJ4m+z5zkQWlUNxB+hsc0vpZBIKcB3FNb/8Hw7weZ+VK8C9Xl5DK/Fj4e0zQ7buWSdA+43Pfm2LhVGxpTQVaYx1k/Dvwes7LbFhjqPEuKwPsMGfH1AJskEKfhdX19+enPv9NO5jbkSwGCiKxwxAokGCNQeqpi9QCLM= postgres@pg01
 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDWVO8MfnlXHRj3P2rarRX0H7Spbyv5etJwMA3PXtsr7UlJWz7OpbqlbatflCIDnNm1xa5PNKoCGNvTW2EBE4bN1N5fxD6AdgImyuH7lINJ9drj3IcI22YFAExrQGOuJzkKahIfmDaQo8lRPlsTCNLak1GhL28T6JsfwXI0OswIyIIgvZChfk/dxrVS1vz+pg/sCLt7KBwpOELjzIHWxlMK0sTd2TCMe0oMpsOipmO+Kdv+da7beyZUSAL77sSZa074XZZapJ4nANkbq51Nz3lOkl8kjYi4BPy1gPLRuW9MqlX0Y4LBoyJ4EiR6+/eK3Z3ie+o1vzKvSeaFtoZBzhOyt3HzqNfsyuYoP2EjcbgYUbNsGfD6yjh5u40rSwnzUswGGAO2Min6O76UIOewUQksqKi62ygIdsnoI/jhcJK4JAJNBo/FMqifKDsp76zdAzEO3psJRX7IsZpJrVJksD3PZU7JrsZXBPBhiE/MxT2J5RzhPaKV/TEKAh4K3TdqNVc= postgres@pg03
@@ -93,13 +93,13 @@ sudo rm -rf /var/lib/postgresql/16/main
 sudo -u postgres mkdir -p /var/lib/postgresql/backup/pg01
 ```
 ##### 3.4 Настройка postgres на хосте pg01
-создание пользователя и БД
+###### создание пользователя и БД
 ```sh
 sudo -u postgres psql
 create user backuper password 'db' superuser createdb createrole replication;
 create database otus;
 ```
-заполнение БД данными
+###### заполнение БД данными
 ```sh
 pgbench -i -s 100 otus
 postgres=# select pg_size_pretty(pg_database_size('otus'));
@@ -108,13 +108,13 @@ postgres=# select pg_size_pretty(pg_database_size('otus'));
  1503 MB
 (1 row)
 ```
-создание файла паролей
+###### создание файла паролей
 ```sh
 vim ~/.pgpass
 localhost:5432:postgres:backuper:db
 chmod 600 ~/.pgpass
 ```
-настройка БД в том числе бэкап рестор wal
+###### настройка БД в том числе бэкап рестор wal
 ```sh
 sudo -u postgres psql
 alter system set archive_mode = on;
@@ -184,8 +184,8 @@ wal-g backup-list --pretty
 
 ### 5. Восстановление из архива с первой полной копии и накат wal журналов на хосте pg03
 ##### 5.1 Восстановление первой записи таблицы
-восстанавливаем БД по шагам на разное время и проверяем наличие нужных нам данных в таблице
-удаляем параметр archive_command чтобы новая БД не посылала свои wal в архив
+###### восстанавливаем БД по шагам на разное время и проверяем наличие нужных нам данных в таблице
+###### удаляем параметр archive_command чтобы новая БД не посылала свои wal в архив
 ```sh
 sudo systemctl stop postgresql
 sudo su - postgres
@@ -251,7 +251,7 @@ psql otus -c 'select * from mytest';
 ```
 
 ### 6. Восстановление из архива с полной и всех инкрементальных копий на хосте pg03
-Восстанавливаем БД сразу на последнюю возможную точку из архива, по логу видно что используем сразу все архивы, полный и инкрементальные
+###### Восстанавливаем БД сразу на последнюю возможную точку из архива, по логу видно что используем сразу все архивы, полный и инкрементальные
 ```sh
 pg_ctlcluster 16 main stop
 wal-g backup-list --pretty
