@@ -57,7 +57,6 @@ ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC+h+sCDGnJXmkskkTHBZ1sbGCn8+QOaE+uvqDa4a/O
 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDWVO8MfnlXHRj3P2rarRX0H7Spbyv5etJwMA3PXtsr7UlJWz7OpbqlbatflCIDnNm1xa5PNKoCGNvTW2EBE4bN1N5fxD6AdgImyuH7lINJ9drj3IcI22YFAExrQGOuJzkKahIfmDaQo8lRPlsTCNLak1GhL28T6JsfwXI0OswIyIIgvZChfk/dxrVS1vz+pg/sCLt7KBwpOELjzIHWxlMK0sTd2TCMe0oMpsOipmO+Kdv+da7beyZUSAL77sSZa074XZZapJ4nANkbq51Nz3lOkl8kjYi4BPy1gPLRuW9MqlX0Y4LBoyJ4EiR6+/eK3Z3ie+o1vzKvSeaFtoZBzhOyt3HzqNfsyuYoP2EjcbgYUbNsGfD6yjh5u40rSwnzUswGGAO2Min6O76UIOewUQksqKi62ygIdsnoI/jhcJK4JAJNBo/FMqifKDsp76zdAzEO3psJRX7IsZpJrVJksD3PZU7JrsZXBPBhiE/MxT2J5RzhPaKV/TEKAh4K3TdqNVc= postgres@pg03
 ```
 ##### 2.3 Тест ssh с хостов pg01 pg03
-ssh test
 ```sh
 sudo -u postgres ssh pg02 date 
 ```
@@ -93,21 +92,30 @@ sudo systemctl disable postgresql
 sudo rm -rf /var/lib/postgresql/16/main
 sudo -u postgres mkdir -p /var/lib/postgresql/backup/pg01
 ```
-##### 3.2 Настройка postgres на хосте pg01
+##### 3.4 Настройка postgres на хосте pg01
+####### создание пользователя и БД
 ```sh
 sudo -u postgres psql
 create user backuper password 'db' superuser createdb createrole replication;
 create database otus;
+```
+####### заполнение БД данными
+```sh
 pgbench -i -s 100 otus
-psql -l
 postgres=# select pg_size_pretty(pg_database_size('otus'));
  pg_size_pretty
 ----------------
  1503 MB
 (1 row)
+```
+####### создание файла паролей
+```sh
 vim ~/.pgpass
 localhost:5432:postgres:backuper:db
 chmod 600 ~/.pgpass
+```
+####### настройка БД в том числе бэкап рестор wal
+```sh
 sudo -u postgres psql
 alter system set archive_mode = on;
 alter system set archive_timeout = 60;
