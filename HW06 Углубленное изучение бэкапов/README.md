@@ -303,5 +303,3 @@ psql otus -c 'select * from mytest';
 ```sh
 ./hosts.sh delete
 ```
-./hosts.sh delete
-```
