@@ -36,7 +36,7 @@ yc compute instance stop --name bananaflow-19730802-pg01
 yc compute instance start --name bananaflow-19730802-pg01
 yc compute instance delete --name bananaflow-19730802-pg01
 ```
-##### 1.2 Подключение на хост main и установка необходимых пакетов на хосты pg01 pg03
+##### 1.2 Подключение на хост main и установка необходимых пакетов на хосты
 ```sh
 sudo apt update && sudo apt upgrade -y && sudo apt install -y vim && sudo apt install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && sudo apt-get update && sudo apt -y install postgresql-16 && sudo apt -y install tree && sudo apt install -y jq
 ```
@@ -86,6 +86,36 @@ vim /var/lib/postgresql/.walg.json
 "WALG_DELTA_MAX_STEPS": "7"
 }
 ```
+##### 3.3 Настройка каталога архива хост pg02
+```sh
+sudo systemctl stop postgresql
+sudo systemctl disable postgresql
+sudo rm -rf /var/lib/postgresql/16/main
+sudo -u postgres mkdir -p /var/lib/postgresql/backup/pg01
+```
+##### 3.2 Настройка postgres на хосте pg01
+```sh
+sudo -u postgres psql
+create user backuper password 'db' superuser createdb createrole replication;
+create database otus;
+pgbench -i -s 100 otus
+psql -l
+postgres=# select pg_size_pretty(pg_database_size('otus'));
+ pg_size_pretty
+----------------
+ 1503 MB
+(1 row)
+vim ~/.pgpass
+localhost:5432:postgres:backuper:db
+chmod 600 ~/.pgpass
+sudo -u postgres psql
+alter system set archive_mode = on;
+alter system set archive_timeout = 60;
+alter system set archive_command = '/usr/local/bin/wal-g wal-push "%p" 2>&1 | tee -a /var/lib/postgresql/walg.log';
+alter system set restore_command = '/usr/local/bin/wal-g wal-fetch "%f" "%p" 2>&1 | tee -a /var/lib/postgresql/walg.log';
+sudo systemctl restart postgresql
+```
+
 
 ### Установка Patroni
 ##### 4.1 Меняем конфиги БД на хостах pg01 + pg02
