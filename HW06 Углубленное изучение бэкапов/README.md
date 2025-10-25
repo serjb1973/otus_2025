@@ -93,13 +93,13 @@ sudo rm -rf /var/lib/postgresql/16/main
 sudo -u postgres mkdir -p /var/lib/postgresql/backup/pg01
 ```
 ##### 3.4 Настройка postgres на хосте pg01
-####### создание пользователя и БД
+создание пользователя и БД
 ```sh
 sudo -u postgres psql
 create user backuper password 'db' superuser createdb createrole replication;
 create database otus;
 ```
-####### заполнение БД данными
+заполнение БД данными
 ```sh
 pgbench -i -s 100 otus
 postgres=# select pg_size_pretty(pg_database_size('otus'));
@@ -108,13 +108,13 @@ postgres=# select pg_size_pretty(pg_database_size('otus'));
  1503 MB
 (1 row)
 ```
-####### создание файла паролей
+создание файла паролей
 ```sh
 vim ~/.pgpass
 localhost:5432:postgres:backuper:db
 chmod 600 ~/.pgpass
 ```
-####### настройка БД в том числе бэкап рестор wal
+настройка БД в том числе бэкап рестор wal
 ```sh
 sudo -u postgres psql
 alter system set archive_mode = on;
