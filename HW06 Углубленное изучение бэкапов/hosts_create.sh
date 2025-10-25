@@ -22,7 +22,7 @@ yc compute instance create \
 # create hosts
 for (( i=1; i <= $1; i++ ))
 do
-create_host etcd0$i $var_address"1"$i 20
+create_host pg0$i $var_address"1"$i 20
 done
 
 yc compute instance list
