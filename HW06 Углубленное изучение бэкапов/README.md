@@ -62,64 +62,29 @@ ssh test
 sudo -u postgres ssh pg02 date 
 ```
 
-
-
-#etcd01
-```sh
-sudo wget -O /etc/default/etcd https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/etcd01
-```
-#etcd02
-```sh
-sudo wget -O /etc/default/etcd https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/etcd02
-```
-#etcd03
-```sh
-sudo wget -O /etc/default/etcd https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/etcd03
-```
-##### 2.4 Рестарт сервиса и проверка etcd
-```sh
-sudo systemctl restart etcd
-export ETCDCTL_API=3
-export ETCDCTL_ENDPOINTS=10.129.0.11:2379,10.129.0.12:2379,10.129.0.13:2379
-etcdctl endpoint status -w table
-+------------------+------------------+---------+---------+-----------+-----------+------------+
-|     ENDPOINT     |        ID        | VERSION | DB SIZE | IS LEADER | RAFT TERM | RAFT INDEX |
-+------------------+------------------+---------+---------+-----------+-----------+------------+
-| 10.129.0.11:2379 | cbebe40647788a92 |  3.3.25 |   20 kB |     false |         5 |          9 |
-| 10.129.0.12:2379 | f2a1b7d07b486f3e |  3.3.25 |   20 kB |     false |         5 |          9 |
-| 10.129.0.13:2379 | b1b546f51ce9d0a8 |  3.3.25 |   20 kB |      true |         5 |          9 |
-+------------------+------------------+---------+---------+-----------+-----------+------------+
-etcdctl member list
-yc-user@etcd01:~$ etcdctl member list
-b1b546f51ce9d0a8, started, etcd03, http://10.129.0.13:2380, http://10.129.0.13:2379
-cbebe40647788a92, started, etcd01, http://10.129.0.11:2380, http://10.129.0.11:2379
-f2a1b7d07b486f3e, started, etcd02, http://10.129.0.12:2380, http://10.129.0.12:2379
-yc-user@etcd01:~$
-```
-##### 2.5 Доп проверка
-#etcd01
-```sh
-yc-user@etcd01:~$ etcdctl put foo "Hello World"
-OK
-```
-#etcd02
-```sh
-yc-user@etcd02:~$ export ETCDCTL_API=3
-etcdctl get foo
-foo
-Hello World
-yc-user@etcd02:~$
-```
-
 ### 3. Установка WAL-G
-##### 3.1 Подключение с хоста main
+##### 3.1 Установка бинаря хосты pg01 pg03
 ```sh
-ssh -i ~/.ssh/id_rsa yc-user@pg01
-ssh -i ~/.ssh/id_rsa yc-user@pg02
+wget https://github.com/wal-g/wal-g/releases/download/v3.0.5/wal-g-pg-ubuntu-22.04-amd64.tar.gz
+tar -xvf wal-g-pg-ubuntu-22.04-amd64.tar.gz
+sudo mv wal-g-pg-ubuntu-22.04-amd64 /usr/local/bin/wal-g
 ```
-##### 3.2 Установка пакетов postgres на каждом хосте
+##### 3.2 Настройка конфигов под пользователем postgres на хостах pg01 pg03
 ```sh
-sudo apt install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && sudo apt-get update && sudo apt -y install postgresql-16  && sudo apt -y install patroni
+sudo su - postgres 
+echo "export PGDATA=/var/lib/postgresql/16/main">>.bash_profile
+vim /var/lib/postgresql/.walg.json
+{
+"PGDATA": "/var/lib/postgresql/16/main",
+"PGHOST": "localhost",
+"PGPORT": "5432",
+"PGUSER": "backuper",
+"PGDATABASE": "postgres",
+"WALG_SSH_PREFIX": "ssh://pg02/var/lib/postgresql/backup/pg01/",
+"SSH_USERNAME": "postgres",
+"SSH_PRIVATE_KEY_PATH": "/var/lib/postgresql/.ssh/id_rsa",
+"WALG_DELTA_MAX_STEPS": "7"
+}
 ```
 
 ### Установка Patroni
