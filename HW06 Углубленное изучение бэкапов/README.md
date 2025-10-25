@@ -1,26 +1,24 @@
-# Постоение кластера Patroni
+# Бэкапы на примере WAL_G
 
 Цель:
-- развернуть отказоустойчивый кластер PostgreSQL с Patroni
+- проверить резервное копирование и восстановление базы данных утилитой WAL-G
 
 Скрипты:
 - hosts_create.sh - создание группы виртуалок в облаке yandex
 - hosts.sh - управление группой виртуалок созданной для задания
 
-### 1. Cоздание стенда из  3 etcd + 2 postgres + 1 main
+### 1. Cоздание стенда из 3 хостов
 ##### 1.1 Создание хостов одним скриптом
 ```sh
-./hosts_create.sh 3 2
-+----------------------+----------------------------+---------------+---------+----------------+--------------+
-|          ID          |            NAME            |    ZONE ID    | STATUS  |  EXTERNAL IP   | INTERNAL IP  |
-+----------------------+----------------------------+---------------+---------+----------------+--------------+
-| epd0mbfkodlgfc0tajor | bananaflow-19730802-pg02   | ru-central1-b | RUNNING | 51.250.110.151 | 10.129.0.22  |
-| epd9caboje7daoq32313 | bananaflow-19730802-etcd01 | ru-central1-b | RUNNING | 89.169.161.178 | 10.129.0.11  |
-| epdal79rhhdgd44rifc6 | bananaflow-19730802-pg01   | ru-central1-b | RUNNING | 89.169.181.44  | 10.129.0.21  |
-| epdgv7fhchu16nc2u77q | bananaflow-19730802-main   | ru-central1-b | RUNNING | 51.250.31.197  | 10.129.0.101 |
-| epdiosm6tidu39hjkksm | bananaflow-19730802-etcd02 | ru-central1-b | RUNNING | 89.169.166.141 | 10.129.0.12  |
-| epdj7pf88airbrbmo48m | bananaflow-19730802-etcd03 | ru-central1-b | RUNNING | 89.169.181.216 | 10.129.0.13  |
-+----------------------+----------------------------+---------------+---------+----------------+--------------+
+./hosts_create.sh 3
++----------------------+--------------------------+---------------+---------+----------------+-------------+
+|          ID          |           NAME           |    ZONE ID    | STATUS  |  EXTERNAL IP   | INTERNAL IP |
++----------------------+--------------------------+---------------+---------+----------------+-------------+
+| epd3heces5lq3jm6848s | bananaflow-19730802-pg03 | ru-central1-b | RUNNING | 89.169.183.192 | 10.129.0.13 |
+| epdmget6nph8f51trp8h | bananaflow-19730802-pg01 | ru-central1-b | RUNNING | 89.169.181.249 | 10.129.0.11 |
+| epdtlrgqn9g1p324u6i6 | bananaflow-19730802-pg02 | ru-central1-b | RUNNING | 89.169.161.91  | 10.129.0.12 |
++----------------------+--------------------------+---------------+---------+----------------+-------------+
+
 ```
 Просмотр списка виртаульных машин
 ```sh
@@ -34,24 +32,17 @@ yc compute instance list
 ```
 Управление отдельной машиной
 ```sh
-yc compute instance stop --name bananaflow-19730802-main
-yc compute instance start --name bananaflow-19730802-main
-yc compute instance delete --name bananaflow-19730802-main
+yc compute instance stop --name bananaflow-19730802-pg01
+yc compute instance start --name bananaflow-19730802-pg01
+yc compute instance delete --name bananaflow-19730802-pg01
 ```
-##### 1.2 Перенос ключа на ност main, для удобства работы со стендом
+##### 1.2 Подключение на хост main и установка необходимых пакетов на хосты pg01 pg03
 ```sh
-scp -i ~/.ssh/id_rsa -R ~/.ssh/id_rsa yc-user@51.250.31.197:~/.ssh/  
-ssh -i ~/.ssh/id_rsa yc-user@51.250.31.197
-chmod 400 ~/.ssh/id_rsa
-```
-##### 1.3 Подключение на хост main и установка необходимых пакетов
-```sh
-ssh -i ~/.ssh/id_rsa yc-user@51.250.31.197
-sudo apt update && sudo apt upgrade -y && sudo apt install -y vim && sudo apt install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && sudo apt-get update && sudo apt -y install postgresql-16 && sudo apt -y install haproxy
+sudo apt update && sudo apt upgrade -y && sudo apt install -y vim && sudo apt install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && sudo apt-get update && sudo apt -y install postgresql-16 && sudo apt -y install tree && sudo apt install -y jq
 ```
 
-### 2. Установка Etcd на три хоста
-##### 2.1 Подключение с хоста main
+### 2. Настройка SSH
+##### 2.1 Генерация ключей хосты pg01 pg03
 ```sh
 ssh -i ~/.ssh/id_rsa yc-user@etcd01
 ssh -i ~/.ssh/id_rsa yc-user@etcd02
@@ -111,7 +102,7 @@ Hello World
 yc-user@etcd02:~$
 ```
 
-### 3. Установка Postgresql
+### 3. Установка WAL-G
 ##### 3.1 Подключение с хоста main
 ```sh
 ssh -i ~/.ssh/id_rsa yc-user@pg01
