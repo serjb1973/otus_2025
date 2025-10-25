@@ -116,277 +116,183 @@ alter system set restore_command = '/usr/local/bin/wal-g wal-fetch "%f" "%p" 2>&
 sudo systemctl restart postgresql
 ```
 
-
-### Установка Patroni
-##### 4.1 Меняем конфиги БД на хостах pg01 + pg02
+### 4. Создание резервных копий WAL-G хост pg01
+##### 4.1 Создаём таблицу, запись и делаем полный бэкап БД
 ```sh
-sudo su postgres
-echo "listen_addresses = '*'">> /etc/postgresql/16/main/postgresql.conf
-echo "host all all 0.0.0.0/0 scram-sha-256">>/etc/postgresql/16/main/pg_hba.conf
-echo "host replication all 0.0.0.0/0 scram-sha-256">>/etc/postgresql/16/main/pg_hba.conf
+sudo su - postgres
+psql otus -c 'create table mytest(id serial,dt timestamp default now())'
+psql otus -c 'insert into mytest values (default,default)';
+psql otus -c 'select * from mytest';
+ id |             dt
+----+----------------------------
+  1 | 2025-10-25 16:16:49.814833
+
+wal-g backup-push -f $PGDATA
+wal-g backup-list --pretty
+
++---+-------------------------------+----------------------------------+--------------------------+--------------+
+| # | BACKUP NAME                   | MODIFIED                         | WAL FILE NAME            | STORAGE NAME |
++---+-------------------------------+----------------------------------+--------------------------+--------------+
+| 0 | base_000000010000000000000089 | Saturday, 25-Oct-25 16:17:50 UTC | 000000010000000000000089 | default      |
++---+-------------------------------+----------------------------------+--------------------------+--------------+
 ```
-##### 4.2 Останавливаем и удаляем БД на хосте pg02
+##### 4.2 Добавляем запись и делаем инкрементальный бэкап БД
+```sh
+psql otus -c 'insert into mytest values (default,default)';
+psql otus -c 'select * from mytest';
+id |             dt
+----+----------------------------
+  1 | 2025-10-25 16:16:49.814833
+  2 | 2025-10-25 16:18:11.638427
+
+wal-g backup-push --delta-from-name base_000000010000000000000089 $PGDATA
+wal-g backup-list --pretty
++---+----------------------------------------------------------+----------------------------------+--------------------------+--------------+
+| # | BACKUP NAME                                              | MODIFIED                         | WAL FILE NAME            | STORAGE NAME |
++---+----------------------------------------------------------+----------------------------------+--------------------------+--------------+
+| 0 | base_000000010000000000000089                            | Saturday, 25-Oct-25 16:17:50 UTC | 000000010000000000000089 | default      |
+| 1 | base_00000001000000000000008B_D_000000010000000000000089 | Saturday, 25-Oct-25 16:18:50 UTC | 00000001000000000000008B | default      |
++---+----------------------------------------------------------+----------------------------------+--------------------------+--------------+
+```
+##### 4.2 Добавляем запись и делаем второй инкрементальный бэкап БД
+```sh
+psql otus -c 'insert into mytest values (default,default)';
+psql otus -c 'select * from mytest';
+id |             dt
+----+----------------------------
+  1 | 2025-10-25 16:16:49.814833
+  2 | 2025-10-25 16:18:11.638427
+  3 | 2025-10-25 16:19:12.849934
+wal-g backup-push --delta-from-name base_00000001000000000000008B_D_000000010000000000000089 $PGDATA
+wal-g backup-list --pretty
++---+----------------------------------------------------------+----------------------------------+--------------------------+--------------+
+| # | BACKUP NAME                                              | MODIFIED                         | WAL FILE NAME            | STORAGE NAME |
++---+----------------------------------------------------------+----------------------------------+--------------------------+--------------+
+| 0 | base_000000010000000000000089                            | Saturday, 25-Oct-25 16:17:50 UTC | 000000010000000000000089 | default      |
+| 1 | base_00000001000000000000008B_D_000000010000000000000089 | Saturday, 25-Oct-25 16:18:50 UTC | 00000001000000000000008B | default      |
+| 2 | base_00000001000000000000008D_D_00000001000000000000008B | Saturday, 25-Oct-25 16:19:48 UTC | 00000001000000000000008D | default      |
++---+----------------------------------------------------------+----------------------------------+--------------------------+--------------+
+```
+
+### 5. Восстановление из архива с первой полной копии и накат wal журналов на хосте pg03
+##### 5.1 Восстановление первой записи таблицы
 ```sh
 sudo systemctl stop postgresql
-sudo systemctl disable postgresql
-sudo rm -rf /var/lib/postgresql/16/main/*
-sudo systemctl stop patroni
-sudo wget -O /etc/patroni/config.yml https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/patroni_02_config.yml
-sudo cat /etc/patroni/config.yml
+sudo su - postgres
+pg_ctlcluster 16 main stop
+wal-g backup-list --pretty
++---+----------------------------------------------------------+----------------------------------+--------------------------+--------------+
+| # | BACKUP NAME                                              | MODIFIED                         | WAL FILE NAME            | STORAGE NAME |
++---+----------------------------------------------------------+----------------------------------+--------------------------+--------------+
+| 0 | base_000000010000000000000089                            | Saturday, 25-Oct-25 16:17:50 UTC | 000000010000000000000089 | default      |
+| 1 | base_00000001000000000000008B_D_000000010000000000000089 | Saturday, 25-Oct-25 16:18:50 UTC | 00000001000000000000008B | default      |
+| 2 | base_00000001000000000000008D_D_00000001000000000000008B | Saturday, 25-Oct-25 16:19:48 UTC | 00000001000000000000008D | default      |
++---+----------------------------------------------------------+----------------------------------+--------------------------+--------------+
+rm -rf $PGDATA/*
+wal-g backup-fetch $PGDATA base_000000010000000000000089
+INFO: 2025/10/25 16:21:38.417866 Selecting the backup with name base_000000010000000000000089...
+INFO: 2025/10/25 16:21:38.418493 Backup to fetch will be searched in storages: [default]
+INFO: 2025/10/25 16:21:59.019478 Finished extraction of part_001.tar.lz4
+INFO: 2025/10/25 16:22:04.190118 Finished extraction of part_002.tar.lz4
+INFO: 2025/10/25 16:22:04.212486 Finished extraction of backup_label.tar.lz4
+INFO: 2025/10/25 16:22:04.252190 Finished extraction of pg_control.tar.lz4
+INFO: 2025/10/25 16:22:04.252266
+Backup extraction complete.
+
+touch $PGDATA/recovery.signal
+sed -i '/archive_command/d' $PGDATA/postgresql.auto.conf
+echo "recovery_target_time='2025-10-25 16:18:00'">>$PGDATA/postgresql.auto.conf
+echo "recovery_target_action='pause'">>$PGDATA/postgresql.auto.conf
+cat $PGDATA/postgresql.auto.conf
+rm /var/log/postgresql/postgresql-16-main.log
+pg_ctlcluster 16 main start
+psql otus -c 'select * from mytest';
+ id |             dt
+----+----------------------------
+  1 | 2025-10-25 16:16:49.814833
+psql otus -c 'select pg_get_wal_replay_pause_state()'
+ pg_get_wal_replay_pause_state
+-------------------------------
+ paused
+```
+##### 5.2 Продолжение наката wal и восстановление второй записи таблицы
+```sh
+pg_ctlcluster 16 main stop
+sed -i 's/2025-10-25 16:18:00/2025-10-25 16:19:00/g' $PGDATA/postgresql.auto.conf
+pg_ctlcluster 16 main start
+psql otus -c 'select * from mytest';
+ id |             dt
+----+----------------------------
+  1 | 2025-10-25 16:16:49.814833
+  2 | 2025-10-25 16:18:11.638427
+```
+##### 5.3 Окончательный накат всех доступных wal и восстановление третьей записи таблицы
+```sh
+pg_ctlcluster 16 main stop
+sed -i '/recovery_target_time/d' $PGDATA/postgresql.auto.conf
+sed -i '/recovery_target_action/d' $PGDATA/postgresql.auto.conf
+pg_ctlcluster 16 main start
+psql otus -c 'select * from mytest';
+ id |             dt
+----+----------------------------
+  1 | 2025-10-25 16:16:49.814833
+  2 | 2025-10-25 16:18:11.638427
+  3 | 2025-10-25 16:19:12.849934
 ```
 
-##### 4.3 Останавливаем БД на хосте pg01 и поднимаем её через сервис patroni
+### 6. Восстановление из архива с полной и всех инкрементальных копий на хосте pg03
+##### 6.1 Применяем сразу все архивы, полный и инкрементальные
 ```sh
-sudo -u postgres psql
-create user patroni password 'pat' superuser createdb createrole replication;
-sudo systemctl stop patroni
-sudo wget -O /etc/patroni/config.yml https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/patroni_01_config.yml
-sudo -u postgres patroni --validate-config /etc/patroni/config.yml
-sudo vim /etc/patroni/config.yml
-sudo systemctl stop postgresql
-sudo systemctl disable postgresql
-sudo systemctl start patroni
-patronictl -c /etc/patroni/config.yml show-config
-patronictl -c /etc/patroni/config.yml list
-yc-user@pg01:~$ patronictl -c /etc/patroni/config.yml list
-+ Cluster: 16/main (7563341935804649837) -+----+-----------+
-| Member | Host        | Role   | State   | TL | Lag in MB |
-+--------+-------------+--------+---------+----+-----------+
-| pg01   | 10.129.0.21 | Leader | running |  2 |           |
-+--------+-------------+--------+---------+----+-----------+
-```
-##### 4.4 Восстанавливаем реплику на pg02 
-```sh
-sudo systemctl start patroni
-patronictl -c /etc/patroni/config.yml list
-yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml list
-+ Cluster: 16/main (7563341935804649837) ----+----+-----------+
-| Member | Host        | Role    | State     | TL | Lag in MB |
-+--------+-------------+---------+-----------+----+-----------+
-| pg01   | 10.129.0.21 | Leader  | running   |  2 |           |
-| pg02   | 10.129.0.22 | Replica | streaming |  2 |         0 |
-+--------+-------------+---------+-----------+----+-----------+
-```
+pg_ctlcluster 16 main stop
+wal-g backup-list --pretty
++---+----------------------------------------------------------+----------------------------------+--------------------------+--------------+
+| # | BACKUP NAME                                              | MODIFIED                         | WAL FILE NAME            | STORAGE NAME |
++---+----------------------------------------------------------+----------------------------------+--------------------------+--------------+
+| 0 | base_000000010000000000000089                            | Saturday, 25-Oct-25 16:17:50 UTC | 000000010000000000000089 | default      |
+| 1 | base_00000001000000000000008B_D_000000010000000000000089 | Saturday, 25-Oct-25 16:18:50 UTC | 00000001000000000000008B | default      |
+| 2 | base_00000001000000000000008D_D_00000001000000000000008B | Saturday, 25-Oct-25 16:19:48 UTC | 00000001000000000000008D | default      |
++---+----------------------------------------------------------+----------------------------------+--------------------------+--------------+
+rm -rf $PGDATA/*
+wal-g backup-fetch $PGDATA LATEST
+INFO: 2025/10/25 16:31:53.616607 Selecting the latest backup...
+INFO: 2025/10/25 16:31:53.617096 Backup to fetch will be searched in storages: [default]
+INFO: 2025/10/25 16:31:53.898961 LATEST backup is: 'base_00000001000000000000008D_D_00000001000000000000008B'
+INFO: 2025/10/25 16:31:53.980344 Delta from base_00000001000000000000008B_D_000000010000000000000089 at LSN 0/8B000028
+INFO: 2025/10/25 16:31:54.060412 Delta from base_000000010000000000000089 at LSN 0/89000028
+INFO: 2025/10/25 16:32:16.192467 Finished extraction of part_001.tar.lz4
+INFO: 2025/10/25 16:32:21.047396 Finished extraction of part_002.tar.lz4
+INFO: 2025/10/25 16:32:21.050643 Finished extraction of pg_control.tar.lz4
+INFO: 2025/10/25 16:32:21.056333 Finished extraction of backup_label.tar.lz4
+INFO: 2025/10/25 16:32:21.056370
+Backup extraction complete.
+INFO: 2025/10/25 16:32:21.056380 base_000000010000000000000089 fetched. Upgrading from LSN 0/89000028 to LSN 0/8B000028
+INFO: 2025/10/25 16:32:21.102890 Finished extraction of part_001.tar.lz4
+INFO: 2025/10/25 16:32:21.124440 Finished extraction of pg_control.tar.lz4
+INFO: 2025/10/25 16:32:21.159775 Finished extraction of backup_label.tar.lz4
+INFO: 2025/10/25 16:32:21.159830
+Backup extraction complete.
+INFO: 2025/10/25 16:32:21.159858 base_00000001000000000000008B_D_000000010000000000000089 fetched. Upgrading from LSN 0/8B000028 to LSN 0/8D000028
+INFO: 2025/10/25 16:32:21.242746 Finished extraction of part_001.tar.lz4
+INFO: 2025/10/25 16:32:21.314411 Finished extraction of backup_label.tar.lz4
+INFO: 2025/10/25 16:32:21.316110 Finished extraction of pg_control.tar.lz4
+INFO: 2025/10/25 16:32:21.316396
+Backup extraction complete.
 
-### 5. Тест Patroni
-##### 5.1 Создаём таблицу на master БД pg01
-```sh
-sudo -u postgres psql -h pg01 -U patroni postgres
-postgres=# select pg_read_file('/etc/hostname');
- pg_read_file
---------------
- pg01        +
-postgres=# select pg_is_in_recovery();
- pg_is_in_recovery
--------------------
- f
-(1 row)
-select * from pg_get_replication_slots();
-postgres=# select * from pg_get_replication_slots();
- slot_name | plugin | slot_type | datoid | temporary | active | active_pid | xmin | catalog_xmin | restart_lsn | confirmed_flush_lsn | wal_status | safe_wal_size | two_phase | conflicting
------------+--------+-----------+--------+-----------+--------+------------+------+--------------+-------------+---------------------+------------+---------------+-----------+-------------
- pg02      |        | physical  |        | f         | t      |       1115 |      |              | 0/3000148   |                     | reserved   |               | f         |
-(1 row)
-create database otus;
-\c otus
-create table mytest (id serial);
-insert into mytest values (default);
-otus=# select * from mytest;
- id
-----
-  1
-(1 row)
-```
-##### 5.2 Проверяем репликацию на pg02
-```sh
-sudo -u postgres psql -h pg02 -U patroni otus
-otus=# select pg_read_file('/etc/hostname');
- pg_read_file
---------------
- pg02        +
-
-(1 row)
-
-otus=# select * from mytest;
- id
-----
-  1
-(1 row)
-
-otus=# select pg_is_in_recovery();
- pg_is_in_recovery
--------------------
- t
-(1 row)
-
-otus=# select now()-pg_last_xact_replay_timestamp() as replay_lag;
-   replay_lag
------------------
- 00:01:32.959131
-(1 row)
-```
-##### 5.3 Делаем switchover
-```sh
-yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml list
-+ Cluster: 16/main (7563341935804649837) ----+----+-----------+
-| Member | Host        | Role    | State     | TL | Lag in MB |
-+--------+-------------+---------+-----------+----+-----------+
-| pg01   | 10.129.0.21 | Leader  | running   |  2 |           |
-| pg02   | 10.129.0.22 | Replica | streaming |  2 |         0 |
-+--------+-------------+---------+-----------+----+-----------+
-yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml switchover
-Current cluster topology
-+ Cluster: 16/main (7563341935804649837) ----+----+-----------+
-| Member | Host        | Role    | State     | TL | Lag in MB |
-+--------+-------------+---------+-----------+----+-----------+
-| pg01   | 10.129.0.21 | Leader  | running   |  2 |           |
-| pg02   | 10.129.0.22 | Replica | streaming |  2 |         0 |
-+--------+-------------+---------+-----------+----+-----------+
-Primary [pg01]:
-Candidate ['pg02'] []:
-When should the switchover take place (e.g. 2025-10-21T16:54 )  [now]:
-Are you sure you want to switchover cluster 16/main, demoting current leader pg01? [y/N]: y
-2025-10-21 15:54:43.35232 Successfully switched over to "pg02"
-+ Cluster: 16/main (7563341935804649837) --+----+-----------+
-| Member | Host        | Role    | State   | TL | Lag in MB |
-+--------+-------------+---------+---------+----+-----------+
-| pg01   | 10.129.0.21 | Replica | stopped |    |   unknown |
-| pg02   | 10.129.0.22 | Leader  | running |  2 |           |
-+--------+-------------+---------+---------+----+-----------+
-yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml list
-+ Cluster: 16/main (7563341935804649837) ----+----+-----------+
-| Member | Host        | Role    | State     | TL | Lag in MB |
-+--------+-------------+---------+-----------+----+-----------+
-| pg01   | 10.129.0.21 | Replica | streaming |  3 |         0 |
-| pg02   | 10.129.0.22 | Leader  | running   |  3 |           |
-+--------+-------------+---------+-----------+----+-----------+
-```
-
-### 6. Установка Haproxy
-##### 6.1 Переносим конфиги на хосте main
-```sh
-sudo systemctl stop haproxy
-sudo wget -O /etc/haproxy/haproxy.cfg https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW05%20Постоение%20кластера%20Patroni/haproxy.cfg
-```
-##### 6.2 Рестартуем сервис
-```sh
-sudo haproxy -c -V -f /etc/haproxy/haproxy.cfg
-sudo systemctl start haproxy
-sudo systemctl status haproxy
-```
-
-### 7. Тест Patroni+Haproxy
-##### 7.1 Соединение через Haproxy
-```sh
-sudo -u postgres psql -h 51.250.31.197 -U patroni -p 5555 otus
-otus=# select pg_read_file('/etc/hostname');
- pg_read_file
---------------
- pg02        +
-```
-##### 7.2 Переключение БД
-```sh
-yc-user@pg01:~$ patronictl -c /etc/patroni/config.yml switchover
-Current cluster topology
-+ Cluster: 16/main (7563341935804649837) ----+----+-----------+
-| Member | Host        | Role    | State     | TL | Lag in MB |
-+--------+-------------+---------+-----------+----+-----------+
-| pg01   | 10.129.0.21 | Replica | streaming |  3 |         0 |
-| pg02   | 10.129.0.22 | Leader  | running   |  3 |           |
-+--------+-------------+---------+-----------+----+-----------+
-Primary [pg02]:
-Candidate ['pg01'] []:
-When should the switchover take place (e.g. 2025-10-21T17:12 )  [now]:
-Are you sure you want to switchover cluster 16/main, demoting current leader pg02? [y/N]: y
-2025-10-21 16:12:45.94027 Successfully switched over to "pg01"
-+ Cluster: 16/main (7563341935804649837) --+----+-----------+
-| Member | Host        | Role    | State   | TL | Lag in MB |
-+--------+-------------+---------+---------+----+-----------+
-| pg01   | 10.129.0.21 | Leader  | running |  3 |           |
-| pg02   | 10.129.0.22 | Replica | stopped |    |   unknown |
-+--------+-------------+---------+---------+----+-----------+
-yc-user@pg01:~$ patronictl -c /etc/patroni/config.yml list
-+ Cluster: 16/main (7563341935804649837) ----+----+-----------+
-| Member | Host        | Role    | State     | TL | Lag in MB |
-+--------+-------------+---------+-----------+----+-----------+
-| pg01   | 10.129.0.21 | Leader  | running   |  4 |           |
-| pg02   | 10.129.0.22 | Replica | streaming |  4 |         0 |
-+--------+-------------+---------+-----------+----+-----------+
-```
-##### 7.3 Соединение через Haproxy после switchover в той же сессии
-```sh
-otus=# select pg_read_file('/etc/hostname');
-FATAL:  terminating connection due to administrator command
-SSL connection has been closed unexpectedly
-The connection to the server was lost. Attempting reset: Succeeded.
-SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off)
-otus=# select pg_read_file('/etc/hostname');
- pg_read_file
---------------
- pg01        +
-```
-##### 7.4 Остановка хоста с БД в роли master - failover
-```sh
-yc compute instance stop bananaflow-19730802-pg01
-```
-##### 7.5 Соединение через Haproxy после failover в той же сессии
-```sh
-otus=# select pg_read_file('/etc/hostname');
-FATAL:  terminating connection due to administrator command
-SSL connection has been closed unexpectedly
-The connection to the server was lost. Attempting reset: Succeeded.
-SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off)
-otus=# select pg_read_file('/etc/hostname');
- pg_read_file
---------------
- pg02        +
-```
-##### 7.6 Проверка состояния patroni после failover
-```sh
-yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml list
-+ Cluster: 16/main (7563341935804649837) -+----+-----------+
-| Member | Host        | Role   | State   | TL | Lag in MB |
-+--------+-------------+--------+---------+----+-----------+
-| pg02   | 10.129.0.22 | Leader | running |  5 |           |
-+--------+-------------+--------+---------+----+-----------+
-yc-user@pg02:~$
-```
-##### 7.7 Старт упавшего хоста хоста с БД в роли master 
-```sh
-yc compute instance start bananaflow-19730802-pg01
-```
-##### 7.8 Проверка состояния patroni после старта хоста после падения
-```sh
-yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml list
-+ Cluster: 16/main (7563341935804649837) -+----+-----------+
-| Member | Host        | Role   | State   | TL | Lag in MB |
-+--------+-------------+--------+---------+----+-----------+
-| pg02   | 10.129.0.22 | Leader | running |  5 |           |
-+--------+-------------+--------+---------+----+-----------+
-yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml list
-+ Cluster: 16/main (7563341935804649837) --+----+-----------+
-| Member | Host        | Role    | State   | TL | Lag in MB |
-+--------+-------------+---------+---------+----+-----------+
-| pg01   | 10.129.0.21 | Replica | stopped |    |   unknown |
-| pg02   | 10.129.0.22 | Leader  | running |  5 |           |
-+--------+-------------+---------+---------+----+-----------+
-yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml list
-+ Cluster: 16/main (7563341935804649837) ---+----+-----------+
-| Member | Host        | Role    | State    | TL | Lag in MB |
-+--------+-------------+---------+----------+----+-----------+
-| pg01   | 10.129.0.21 | Replica | starting |    |   unknown |
-| pg02   | 10.129.0.22 | Leader  | running  |  5 |           |
-+--------+-------------+---------+----------+----+-----------+
-yc-user@pg02:~$ patronictl -c /etc/patroni/config.yml list
-+ Cluster: 16/main (7563341935804649837) ----+----+-----------+
-| Member | Host        | Role    | State     | TL | Lag in MB |
-+--------+-------------+---------+-----------+----+-----------+
-| pg01   | 10.129.0.21 | Replica | streaming |  5 |         0 |
-| pg02   | 10.129.0.22 | Leader  | running   |  5 |           |
-+--------+-------------+---------+-----------+----+-----------+
+touch $PGDATA/recovery.signal
+sed -i '/archive_command/d' $PGDATA/postgresql.auto.conf
+rm /var/log/postgresql/postgresql-16-main.log
+pg_ctlcluster 16 main start
+psql otus -c 'select * from mytest';
+ id |             dt
+----+----------------------------
+  1 | 2025-10-25 16:16:49.814833
+  2 | 2025-10-25 16:18:11.638427
+  3 | 2025-10-25 16:19:12.849934
 ```
 
 ### 8. Удаление стенда
 ```sh
+./hosts.sh delete
+```
 ./hosts.sh delete
 ```
