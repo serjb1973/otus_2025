@@ -30,7 +30,7 @@ ssh -i ~/.ssh/id_rsa yc-user@51.250.31.197
 sudo apt update && sudo apt upgrade -y && sudo apt install -y vim && sudo apt install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && sudo apt-get update && sudo apt -y install postgresql-16 && sudo apt -y install tree && sudo apt install -y jq && sudo apt install -y sysstat
 ```
 
-### 2. Настройка БД в основном по рекомендациям www.pgconfig.org
+### 2. Настройка БД по рекомендациям www.pgconfig.org
 ```sh
 sudo -u postgres psql
 alter system set shared_buffers TO '8GB';
