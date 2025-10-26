@@ -269,10 +269,10 @@ tps = 490.277494 (without initial connection time)
 tps = 5410.918620 (without initial connection time)
 
 #### Вывод:
-##### Настройка ОС может дать повышение производительтности.
+##### Настройка ОС может дать кратное повышение производительтности.
 
 
 ### 10. Удаление стенда
 ```sh
-./hosts.sh delete
+yc compute instance delete --name bananaflow-19730802
 ```
