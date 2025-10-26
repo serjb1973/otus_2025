@@ -110,8 +110,8 @@ postgres=# select pg_size_pretty(pg_database_size('otus'));
 ```
 ###### создание файла паролей
 ```sh
-vim ~/.pgpass
-localhost:5432:postgres:backuper:db
+sudo su - postgres
+echo "localhost:5432:postgres:backuper:db">>~/.pgpass
 chmod 600 ~/.pgpass
 ```
 ###### настройка БД в том числе бэкап рестор wal
