@@ -1,112 +1,59 @@
-# Гонка за производительностью
+# Введение в Kubernetes: Работа с хранилищами данных и конфигурациями
 
 Цель:
-- настроить PostgreSQL для максимальной скорости работы под нагрузкой
+- развернуть PostgreSQL в локальном Kubernetes-кластере Minikube, обеспечить её доступность и масштабируемость
 
 
 ### 1. Cоздание стенда
 ##### 1.1 Создание Виртуальной машины в облаке https://cloud.yandex.ru
 ```sh
 yc compute instance create \
-  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-2204-lts,auto-delete,type=network-hdd,size=100GB \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-2204-lts,auto-delete,type=network-hdd,size=50GB \
   --name bananaflow-19730802 \
   --public-address 51.250.31.197 \
   --ssh-key ~/.ssh/id_rsa.pub \
-  --memory 32GB --cores 4 --core-fraction 100 --preemptible 
+  --memory 16GB --cores 4 --core-fraction 20 --preemptible
 ```
 ###### Просмотр списка виртаульных машин
 ```sh
 yc compute instance list
 ```
-###### Управление виртуальной машиной
+###### 1.2 Управление виртуальной машиной
 ```sh
 yc compute instance stop --name bananaflow-19730802
 yc compute instance start --name bananaflow-19730802
 yc compute instance delete --name bananaflow-19730802
 ```
-##### 1.2 Подключение на хост main и установка необходимых пакетов на хосты
+
+### 2 Установка Minikube
+https://minikube.sigs.k8s.io/docs/start/?arch=%2Flinux%2Fx86-64%2Fstable%2Fdebian+package
 ```sh
 ssh -i ~/.ssh/id_rsa yc-user@51.250.31.197
-sudo apt update && sudo apt upgrade -y && sudo apt install -y vim && sudo apt install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && sudo apt-get update && sudo apt -y install postgresql-16 && sudo apt -y install tree && sudo apt install -y jq && sudo apt install -y sysstat
+sudo apt update && sudo apt upgrade -y && sudo apt install -y vim docker docker.io net-tools postgresql-client-common postgresql-client-14
+curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube_latest_amd64.deb
+sudo dpkg -i minikube_latest_amd64.deb
+sudo usermod -aG docker yc-user && newgrp docker
 ```
 
-### 2. Настройка БД по рекомендациям www.pgconfig.org
+### 3. Старт kubernetes и проверка
 ```sh
-sudo -u postgres psql
-alter system set shared_buffers TO '8GB';
-alter system set effective_cache_size TO '24GB';
-alter system set work_mem TO '82MB';
-alter system set maintenance_work_mem TO '2GB';
-alter system set min_wal_size TO '1GB';
-alter system set max_wal_size TO '4GB';
-alter system set listen_addresses TO '*';
-alter system set max_connections TO '100';
-alter system set effective_io_concurrency TO '2';
-alter system set max_parallel_maintenance_workers='16';
-sudo systemctl restart postgresql;
-
-sudo -u postgres psql -c "select name,setting,source from pg_settings where source!='default'"
-               name               |                 setting                 |       source
-----------------------------------+-----------------------------------------+--------------------
- application_name                 | psql                                    | client
- client_encoding                  | UTF8                                    | client
- cluster_name                     | 16/main                                 | configuration file
- config_file                      | /etc/postgresql/16/main/postgresql.conf | override
- data_directory                   | /var/lib/postgresql/16/main             | override
- DateStyle                        | ISO, MDY                                | configuration file
- default_text_search_config       | pg_catalog.english                      | configuration file
- dynamic_shared_memory_type       | posix                                   | configuration file
- effective_cache_size             | 3145728                                 | configuration file
- effective_io_concurrency         | 2                                       | configuration file
- external_pid_file                | /var/run/postgresql/16-main.pid         | configuration file
- hba_file                         | /etc/postgresql/16/main/pg_hba.conf     | override
- ident_file                       | /etc/postgresql/16/main/pg_ident.conf   | override
- lc_messages                      | C.UTF-8                                 | configuration file
- lc_monetary                      | C.UTF-8                                 | configuration file
- lc_numeric                       | C.UTF-8                                 | configuration file
- lc_time                          | C.UTF-8                                 | configuration file
- listen_addresses                 | *                                       | configuration file
- log_line_prefix                  | %m [%p] %q%u@%d                         | configuration file
- log_timezone                     | Etc/UTC                                 | configuration file
- maintenance_work_mem             | 2097152                                 | configuration file
- max_connections                  | 100                                     | configuration file
- max_parallel_maintenance_workers | 16                                      | configuration file
- max_wal_size                     | 4096                                    | configuration file
- min_wal_size                     | 1024                                    | configuration file
- port                             | 5432                                    | configuration file
- shared_buffers                   | 1048576                                 | configuration file
- ssl                              | on                                      | configuration file
- ssl_cert_file                    | /etc/ssl/certs/ssl-cert-snakeoil.pem    | configuration file
- ssl_key_file                     | /etc/ssl/private/ssl-cert-snakeoil.key  | configuration file
- TimeZone                         | Etc/UTC                                 | configuration file
- transaction_deferrable           | off                                     | override
- transaction_isolation            | read committed                          | override
- transaction_read_only            | off                                     | override
- unix_socket_directories          | /var/run/postgresql                     | configuration file
- work_mem                         | 83968                                   | configuration file
-(36 rows)
+minikube start --kubernetes-version=v1.34.0
+alias kubectl="minikube kubectl --"
+minikube kubectl get nodes
+NAME       STATUS   ROLES           AGE     VERSION
+minikube   Ready    control-plane   2m11s   v1.34.0
 ```
 
-### 3. Генерация данных pgbench
+### 4. Создание и запуск postgres как statefulset
+##### 4.1 Создание Secret с паролями
 ```sh
-sudo -u postgres psql -c "create database otus"
-sudo -u postgres pgbench -i -s 1000 otus
-dropping old tables...
-NOTICE:  table "pgbench_accounts" does not exist, skipping
-NOTICE:  table "pgbench_branches" does not exist, skipping
-NOTICE:  table "pgbench_history" does not exist, skipping
-NOTICE:  table "pgbench_tellers" does not exist, skipping
-creating tables...
-generating data (client-side)...
-100000000 of 100000000 tuples (100%) done (elapsed 667.14 s, remaining 0.00 s)
-vacuuming...
-creating primary keys...
-done in 890.80 s (drop tables 0.00 s, create tables 0.01 s, client-side generate 668.01 s, vacuum 0.29 s, primary keys 222.49 s).
-
-sudo -u postgres psql -c "select pg_size_pretty(pg_database_size('otus'))"
- pg_size_pretty
-----------------
- 15 GB
+yc-user@epdkp32fmcq8t9ckur46:~$ echo -n "pgpass"|base64
+cGdwYXNz
+yc-user@epdkp32fmcq8t9ckur46:~$ echo -n "upass"|base64
+dXBhc3M=
+sudo wget -O ./ https://github.com/serjb1973/otus_2025/blob/main/HW10%20Введение%20в%20Kubernetes%20Работа%20с%20хранилищами%20данных%20и%20конфигурациями/postgres-config.yaml
+kubectl apply -f postgres-secret.yaml
+secret/postgres-secrets created
 ```
 
 ### 4. Тест 1 pgbench (сделана перезагрузка виртуалки и затем несколько запусков pgbench, в зачёт идёт лучший по цифрам запуск)
