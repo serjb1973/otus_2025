@@ -49,6 +49,14 @@ minikube   Ready    control-plane   2m11s   v1.34.0
 ```sh
 wget https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW10%20Введение%20в%20Kubernetes%20Работа%20с%20хранилищами%20данных%20и%20конфигурациями/demo-namespace.yaml
 kubectl apply -f demo-namespace.yaml
+kubectl get namespace
+NAME              STATUS   AGE
+default           Active   68s
+demo              Active   7s
+kube-node-lease   Active   68s
+kube-public       Active   68s
+kube-system       Active   68s
+
 ```
 ##### 4.2 Создание Secret с паролями
 ```sh
@@ -58,25 +66,34 @@ echo -n "upass"|base64
 dXBhc3M=
 wget https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW10%20Введение%20в%20Kubernetes%20Работа%20с%20хранилищами%20данных%20и%20конфигурациями/postgres-secret.yaml
 kubectl apply -f postgres-secret.yaml
+kubectl -n demo get secret
+NAME               TYPE     DATA   AGE
+postgres-secrets   Opaque   2      3m34s
+
 ```
 ##### 4.3 Создание конфигов
 ```sh
 wget https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW10%20Введение%20в%20Kubernetes%20Работа%20с%20хранилищами%20данных%20и%20конфигурациями/postgres-config.yaml
 kubectl apply -f postgres-config.yaml
+kubectl -n demo get configmap
+NAME               DATA   AGE
+kube-root-ca.crt   1      5m12s
+postgres-config    2      34s
+
 ```
 ##### 4.4 Создание дисковой подсистемы
 ```sh
 wget https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW10%20Введение%20в%20Kubernetes%20Работа%20с%20хранилищами%20данных%20и%20конфигурациями/postgres-pvc.yaml
 kubectl apply -f postgres-pvc.yaml
-kubectl get pvc postgres-pvc
+kubectl -n demo get pvc postgres-pvc
 NAME           STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
-postgres-pvc   Bound    pvc-22006eb3-2683-48b3-a78a-2a3189a06ee4   10Gi       RWO            standard       <unset>                 15s
+postgres-pvc   Bound    pvc-138d8d11-5230-4d3e-983f-ff3dc60e628d   10Gi       RWO            standard       <unset>                 12s
 ```
 ##### 4.5 Создание StatefulSet с PostgreSQL 17
 ```sh
 wget https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW10%20Введение%20в%20Kubernetes%20Работа%20с%20хранилищами%20данных%20и%20конфигурациями/postgres-statefulset.yaml
 kubectl apply -f postgres-statefulset.yaml
-kubectl get pods -l app=postgres
+kubectl -n demo get pods -l app=postgres
 NAME         READY   STATUS              RESTARTS   AGE
 postgres-0   0/1     ContainerCreating   0          12s
 ```
@@ -84,15 +101,17 @@ postgres-0   0/1     ContainerCreating   0          12s
 ```sh
 wget https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW10%20Введение%20в%20Kubernetes%20Работа%20с%20хранилищами%20данных%20и%20конфигурациями/postgres-service.yaml
 kubectl apply -f postgres-service.yaml
-kubectl get svc postgres
-NAME       TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
-postgres   ClusterIP   10.101.53.137   <none>        5432/TCP   13s
+kubectl -n demo get svc postgres
+NAME       TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)    AGE
+postgres   ClusterIP   10.106.249.104   <none>        5432/TCP   9s
 ```
 
 ### 5. Подключение к БД снаружи и создание таблицы 
 ##### 5.1 Проброс порта
 ```sh
 kubectl port-forward -n demo svc/postgres 5432:5432
+Forwarding from 127.0.0.1:5432 -> 5432
+Forwarding from [::1]:5432 -> 5432
 ```
 ##### 5.2 Подключение к БД 
 ```sh
@@ -114,22 +133,24 @@ otus=# select pg_read_file('/etc/hostname');
  pg_read_file
 --------------
  postgres-0  +
-select pg_postmaster_start_time()-now();
+otus=# select pg_postmaster_start_time()-now();
+     ?column?
+------------------
+ -00:01:51.023688
+(1 row)
 ```
 ##### 5.4 Пересоздание БД
 ```sh
-kubectl get pods -o wide
-NAME         READY   STATUS    RESTARTS   AGE   IP           NODE       NOMINATED NODE   READINESS GATES
-postgres-0   1/1     Running   0          23m   10.244.0.9   minikube   <none>           <none>
-
-kubectl delete pod postgres-0 ;  kubectl get pods -l app=postgres
-pod "postgres-0" deleted from default namespace
+ kubectl -n demo get pods -l app=postgres ; kubectl -n demo delete pod postgres-0 ;  kubectl -n demo get pods -l app=postgres
+NAME         READY   STATUS    RESTARTS   AGE
+postgres-0   1/1     Running   0          3m48s
+pod "postgres-0" deleted from demo namespace
 NAME         READY   STATUS              RESTARTS   AGE
 postgres-0   0/1     ContainerCreating   0          0s
 
-kubectl get pods -l app=postgres
+kubectl -n demo get pods -l app=postgres
 NAME         READY   STATUS    RESTARTS   AGE
-postgres-0   1/1     Running   0          5s
+postgres-0   0/1     Running   0          6s
 
 kubectl port-forward -n demo svc/postgres 5432:5432
 Forwarding from 127.0.0.1:5432 -> 5432
@@ -144,15 +165,15 @@ otus=# select * from mytest;
 ----+------------
   1 | 2025-11-04
 (1 row)
-
-otus=# select pg_read_file('/etc/hostname');
- pg_read_file
---------------
- postgres-0  +
 otus=# select pg_postmaster_start_time()-now();
      ?column?
 ------------------
- -00:05:01.395844
+ -00:00:44.467609
+(1 row)
+otus=# select pg_postmaster_start_time()-now();
+     ?column?
+------------------
+ -00:00:48.232838
 (1 row)
 ```
 ### 6. Удаление стенда
