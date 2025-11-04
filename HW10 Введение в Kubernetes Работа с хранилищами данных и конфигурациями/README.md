@@ -72,156 +72,89 @@ kubectl get pvc postgres-pvc
 NAME           STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
 postgres-pvc   Bound    pvc-22006eb3-2683-48b3-a78a-2a3189a06ee4   10Gi       RWO            standard       <unset>                 15s
 ```
-##### 4.3 Создание конфигов
+##### 4.5 Создание StatefulSet с PostgreSQL 17
 ```sh
-wget https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW10%20Введение%20в%20Kubernetes%20Работа%20с%20хранилищами%20данных%20и%20конфигурациями/postgres-config.yaml
-kubectl apply -f postgres-config.yaml
+wget https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW10%20Введение%20в%20Kubernetes%20Работа%20с%20хранилищами%20данных%20и%20конфигурациями/postgres-statefulset.yaml
+kubectl apply -f postgres-statefulset.yaml
+kubectl get pods -l app=postgres
+NAME         READY   STATUS              RESTARTS   AGE
+postgres-0   0/1     ContainerCreating   0          12s
+```
+##### 4.5 Создание сервиса
+```sh
+wget https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW10%20Введение%20в%20Kubernetes%20Работа%20с%20хранилищами%20данных%20и%20конфигурациями/postgres-service.yaml
+kubectl apply -f postgres-service.yaml
+kubectl get svc postgres
+NAME       TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
+postgres   ClusterIP   10.101.53.137   <none>        5432/TCP   13s
 ```
 
-### 5. Оптимизация настроек ОС
-##### 5.1 HugePage
-###### Вычисляем оптимальный размер
+### 5. Подключение к БД снаружи и создание таблицы 
+##### 5.1 Проброс порта
 ```sh
-yc-user@epd9b2clad1ukm0lgl9j:~$ grep -e "^HugePages" /proc/meminfo
-HugePages_Total:       0
-HugePages_Free:        0
-HugePages_Rsvd:        0
-HugePages_Surp:        0
-yc-user@epd9b2clad1ukm0lgl9j:~$ sudo  head -1 /var/lib/postgresql/16/main/postmaster.pid
-703
-yc-user@epd9b2clad1ukm0lgl9j:~$ grep ^VmPeak /proc/703/status
-VmPeak:  8674956 kB
-yc-user@epd9b2clad1ukm0lgl9j:~$ echo $((8674956 / 2048 + 1))
-4236
+kubectl port-forward -n demo svc/postgres 5432:5432
 ```
-###### Устанавливаем HugePage
+##### 5.2 Подключение к БД 
 ```sh
-echo "vm.nr_hugepages = 4236" |sudo tee -a /etc/sysctl.conf 
+psql -h localhost -p 5432 -U otus_user -W -d otus
+upass
 ```
-##### 5.2 Устанавливаем transparent_hugepage
+##### 5.3 Создание таблицы 
 ```sh
-sudo vim /etc/systemd/system/disable-thp.service
-[Unit]
-Description=Disable Transparent Huge Pages
-[Service]
-Type=oneshot
-ExecStart=/bin/sh -c 'echo never > /sys/kernel/mm/transparent_hugepage/enabled'
-ExecStart=/bin/sh -c 'echo never > /sys/kernel/mm/transparent_hugepage/defrag'
-[Install]
-WantedBy=multi-user.target
-
-sudo systemctl daemon-reload
-sudo systemctl enable disable-thp.service
-sudo systemctl start disable-thp.service
+otus=# create table mytest(id serial,dt date default now());
+CREATE TABLE
+otus=# insert into mytest values(default,default);
+INSERT 0 1
+otus=# select * from mytest;
+ id |     dt
+----+------------
+  1 | 2025-11-04
+(1 row)
+otus=# select pg_read_file('/etc/hostname');
+ pg_read_file
+--------------
+ postgres-0  +
+select pg_postmaster_start_time()-now();
 ```
-##### 5.3 Устанавливаем размер swappiness
+##### 5.4 Пересоздание БД
 ```sh
-cat /proc/sys/vm/swappiness
-60
-echo "vm.swappiness=5" |sudo tee -a /etc/sysctl.conf
-```
-##### 5.4 Перезагружаем хост
+kubectl get pods -o wide
+NAME         READY   STATUS    RESTARTS   AGE   IP           NODE       NOMINATED NODE   READINESS GATES
+postgres-0   1/1     Running   0          23m   10.244.0.9   minikube   <none>           <none>
 
-### 6. Тест 2 pgbench (сделана перезагрузка виртуалки и затем несколько запусков pgbench, в зачёт идёт лучший по цифрам запуск)
+kubectl delete pod postgres-0 ;  kubectl get pods -l app=postgres
+pod "postgres-0" deleted from default namespace
+NAME         READY   STATUS              RESTARTS   AGE
+postgres-0   0/1     ContainerCreating   0          0s
+
+kubectl get pods -l app=postgres
+NAME         READY   STATUS    RESTARTS   AGE
+postgres-0   1/1     Running   0          5s
+
+kubectl port-forward -n demo svc/postgres 5432:5432
+Forwarding from 127.0.0.1:5432 -> 5432
+Forwarding from [::1]:5432 -> 5432
+```
+##### 5.5 Проверка наличия таблицы
 ```sh
-sudo -u postgres pgbench -j 4 -v -c 80 -T 60 otus ; sudo -u postgres pgbench -j 4 -v -c 80 -T 60 otus ; sudo -u postgres pgbench -j 4 -v -c 80 -T 60 otus
-starting vacuum...end.
-starting vacuum pgbench_accounts...end.
-transaction type: <builtin: TPC-B (sort of)>
-scaling factor: 1000
-query mode: simple
-number of clients: 80
-number of threads: 4
-maximum number of tries: 1
-duration: 60 s
-number of transactions actually processed: 29413
-number of failed transactions: 0 (0.000%)
-latency average = 163.173 ms
-initial connection time = 122.453 ms
-tps = 490.277494 (without initial connection time)
+yc-user@epdkp32fmcq8t9ckur46:~$ psql -h localhost -p 5432 -U otus_user -W -d otus
+otus=# select * from mytest;
+ id |     dt
+----+------------
+  1 | 2025-11-04
+(1 row)
+
+otus=# select pg_read_file('/etc/hostname');
+ pg_read_file
+--------------
+ postgres-0  +
+otus=# select pg_postmaster_start_time()-now();
+     ?column?
+------------------
+ -00:05:01.395844
+(1 row)
 ```
-
-### 7. Изменение настроек БД - отключение fsync
-```sh
-sudo -u postgres psql -c "alter system set fsync='off'"
-sudo -u postgres psql -c "alter system set full_page_writes='off'"
-sudo systemctl restart postgresql;
-sudo -u postgres psql -c "select name,setting,source from pg_settings where source!='default'"
-               name               |                 setting                 |       source
-----------------------------------+-----------------------------------------+--------------------
- application_name                 | psql                                    | client
- client_encoding                  | UTF8                                    | client
- cluster_name                     | 16/main                                 | configuration file
- config_file                      | /etc/postgresql/16/main/postgresql.conf | override
- data_directory                   | /var/lib/postgresql/16/main             | override
- DateStyle                        | ISO, MDY                                | configuration file
- default_text_search_config       | pg_catalog.english                      | configuration file
- dynamic_shared_memory_type       | posix                                   | configuration file
- effective_cache_size             | 3145728                                 | configuration file
- effective_io_concurrency         | 2                                       | configuration file
- external_pid_file                | /var/run/postgresql/16-main.pid         | configuration file
- fsync                            | off                                     | configuration file
- full_page_writes                 | off                                     | configuration file
- hba_file                         | /etc/postgresql/16/main/pg_hba.conf     | override
- ident_file                       | /etc/postgresql/16/main/pg_ident.conf   | override
- lc_messages                      | C.UTF-8                                 | configuration file
- lc_monetary                      | C.UTF-8                                 | configuration file
- lc_numeric                       | C.UTF-8                                 | configuration file
- lc_time                          | C.UTF-8                                 | configuration file
- listen_addresses                 | *                                       | configuration file
- log_line_prefix                  | %m [%p] %q%u@%d                         | configuration file
- log_timezone                     | Etc/UTC                                 | configuration file
- maintenance_work_mem             | 2097152                                 | configuration file
- max_connections                  | 100                                     | configuration file
- max_parallel_maintenance_workers | 16                                      | configuration file
- max_wal_size                     | 4096                                    | configuration file
- min_wal_size                     | 1024                                    | configuration file
- port                             | 5432                                    | configuration file
- shared_buffers                   | 1048576                                 | configuration file
- ssl                              | on                                      | configuration file
- ssl_cert_file                    | /etc/ssl/certs/ssl-cert-snakeoil.pem    | configuration file
- ssl_key_file                     | /etc/ssl/private/ssl-cert-snakeoil.key  | configuration file
- TimeZone                         | Etc/UTC                                 | configuration file
- transaction_deferrable           | off                                     | override
- transaction_isolation            | read committed                          | override
- transaction_read_only            | off                                     | override
- unix_socket_directories          | /var/run/postgresql                     | configuration file
- work_mem                         | 83968                                   | configuration file
-(38 rows)
-```
-
-### 8. Тест 3 pgbench (сделана перезагрузка виртуалки и затем несколько запусков pgbench, в зачёт идёт лучший по цифрам запуск)
-```sh
-sudo -u postgres pgbench -j 4 -v -c 80 -T 60 otus ; sudo -u postgres pgbench -j 4 -v -c 80 -T 60 otus ; sudo -u postgres pgbench -j 4 -v -c 80 -T 60 otus
-pgbench (16.10 (Ubuntu 16.10-1.pgdg22.04+1))
-starting vacuum...end.
-starting vacuum pgbench_accounts...end.
-transaction type: <builtin: TPC-B (sort of)>
-scaling factor: 1000
-query mode: simple
-number of clients: 80
-number of threads: 4
-maximum number of tries: 1
-duration: 60 s
-number of transactions actually processed: 324556
-number of failed transactions: 0 (0.000%)
-latency average = 14.785 ms
-initial connection time = 106.568 ms
-tps = 5410.918620 (without initial connection time)
-```
-
-### 9. Итого и вывод
-##### 9.1 Производительность с настройками ОС по умолчанию
-tps = 175.074525 (without initial connection time)
-##### 9.2 Производительность с настройками ОС transparent_hugepage=off,hugepage=on,swappiness=5
-tps = 490.277494 (without initial connection time)
-##### 9.3 Производительность с настройками БД отключение синхронной записи wal
-tps = 5410.918620 (without initial connection time)
-##### 9.4 Вывод:
-**Настройка ОС может дать кратное повышение производительности.**
-
-
-### 10. Удаление стенда
+### 6. Удаление стенда
 ```sh
 yc compute instance delete --name bananaflow-19730802
 ```
