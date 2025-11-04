@@ -52,9 +52,9 @@ kubectl apply -f demo-namespace.yaml
 ```
 ##### 4.2 Создание Secret с паролями
 ```sh
-yc-user@epdkp32fmcq8t9ckur46:~$ echo -n "pgpass"|base64
+echo -n "pgpass"|base64
 cGdwYXNz
-yc-user@epdkp32fmcq8t9ckur46:~$ echo -n "upass"|base64
+echo -n "upass"|base64
 dXBhc3M=
 wget https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW10%20Введение%20в%20Kubernetes%20Работа%20с%20хранилищами%20данных%20и%20конфигурациями/postgres-secret.yaml
 kubectl apply -f postgres-secret.yaml
@@ -137,7 +137,8 @@ Forwarding from [::1]:5432 -> 5432
 ```
 ##### 5.5 Проверка наличия таблицы
 ```sh
-yc-user@epdkp32fmcq8t9ckur46:~$ psql -h localhost -p 5432 -U otus_user -W -d otus
+psql -h localhost -p 5432 -U otus_user -W -d otus
+upass
 otus=# select * from mytest;
  id |     dt
 ----+------------
