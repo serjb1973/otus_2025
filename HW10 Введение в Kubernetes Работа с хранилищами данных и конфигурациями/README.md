@@ -45,34 +45,37 @@ minikube   Ready    control-plane   2m11s   v1.34.0
 ```
 
 ### 4. Создание и запуск postgres как statefulset
-##### 4.1 Создание Secret с паролями
+##### 4.1 Создание namespace
+```sh
+wget https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW10%20Введение%20в%20Kubernetes%20Работа%20с%20хранилищами%20данных%20и%20конфигурациями/demo-namespace.yaml
+kubectl apply -f demo-namespace.yaml
+```
+##### 4.2 Создание Secret с паролями
 ```sh
 yc-user@epdkp32fmcq8t9ckur46:~$ echo -n "pgpass"|base64
 cGdwYXNz
 yc-user@epdkp32fmcq8t9ckur46:~$ echo -n "upass"|base64
 dXBhc3M=
-sudo wget -O ./ https://github.com/serjb1973/otus_2025/blob/main/HW10%20Введение%20в%20Kubernetes%20Работа%20с%20хранилищами%20данных%20и%20конфигурациями/postgres-config.yaml
+wget https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW10%20Введение%20в%20Kubernetes%20Работа%20с%20хранилищами%20данных%20и%20конфигурациями/postgres-secret.yaml
 kubectl apply -f postgres-secret.yaml
-secret/postgres-secrets created
 ```
-
-### 4. Тест 1 pgbench (сделана перезагрузка виртуалки и затем несколько запусков pgbench, в зачёт идёт лучший по цифрам запуск)
+##### 4.3 Создание конфигов
 ```sh
-sudo -u postgres pgbench -j 4 -v -c 80 -T 60 otus ; sudo -u postgres pgbench -j 4 -v -c 80 -T 60 otus ; sudo -u postgres pgbench -j 4 -v -c 80 -T 60 otus
-starting vacuum...end.
-starting vacuum pgbench_accounts...end.
-transaction type: <builtin: TPC-B (sort of)>
-scaling factor: 1000
-query mode: simple
-number of clients: 80
-number of threads: 4
-maximum number of tries: 1
-duration: 60 s
-number of transactions actually processed: 10517
-number of failed transactions: 0 (0.000%)
-latency average = 456.948 ms
-initial connection time = 117.514 ms
-tps = 175.074525 (without initial connection time)
+wget https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW10%20Введение%20в%20Kubernetes%20Работа%20с%20хранилищами%20данных%20и%20конфигурациями/postgres-config.yaml
+kubectl apply -f postgres-config.yaml
+```
+##### 4.4 Создание дисковой подсистемы
+```sh
+wget https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW10%20Введение%20в%20Kubernetes%20Работа%20с%20хранилищами%20данных%20и%20конфигурациями/postgres-pvc.yaml
+kubectl apply -f postgres-pvc.yaml
+kubectl get pvc postgres-pvc
+NAME           STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+postgres-pvc   Bound    pvc-22006eb3-2683-48b3-a78a-2a3189a06ee4   10Gi       RWO            standard       <unset>                 15s
+```
+##### 4.3 Создание конфигов
+```sh
+wget https://github.com/serjb1973/otus_2025/raw/refs/heads/main/HW10%20Введение%20в%20Kubernetes%20Работа%20с%20хранилищами%20данных%20и%20конфигурациями/postgres-config.yaml
+kubectl apply -f postgres-config.yaml
 ```
 
 ### 5. Оптимизация настроек ОС
